@@ -1,0 +1,2 @@
+-record(state, {value, seed, density, entities, lps}).
+-record(payload, {entitySender, entityReceiver}).
