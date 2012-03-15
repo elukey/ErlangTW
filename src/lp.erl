@@ -50,6 +50,12 @@ main_loop(Lp) ->
 	
 
 
+%
+% Process the fist message in the inbox_messages priority queue
+% It is responsible to call the user function
+% @param Lp: the Lp status record
+% @return the modified Lp status record
+%
 process_top_message(Lp) ->
 	IsInboxEmpty = gb_trees:is_empty(Lp#lp_status.inbox_messages),
 	if 
@@ -67,6 +73,11 @@ process_top_message(Lp) ->
 	end.
 
 
+%
+% Process the messages received and put them into the received_messages queue 
+% @param Lp: the Lp status record
+% @return the modified Lp status record
+%
 process_received_messages(Lp, MaxMessageToProcess) ->
 	IsQueueEmpty = queue:is_empty(Lp#lp_status.received_messages),
 	if 
@@ -241,6 +252,12 @@ compute_local_minimum(InboxEvent, ToAckEvent, MinMarkedTimestamp, _) when (ToAck
 	lists:min([ToAckEvent#message.timestamp, InboxEvent#message.timestamp, MinMarkedTimestamp]).
 
 
+%
+% Performs the rollback in case of a straggler message arrives 
+% @param Lp: the Lp status record
+% @param StragglerTimestamp: the timestamp to rollback to
+% @return the modified Lp status record
+%
 rollback(StragglerTimestamp, Lp) ->
 	%io:format("\n~w rollbacks to ~w, now it's ~w", [self(), StragglerTimestamp, Lp#lp_status.timestamp]),
 	RollBacks = Lp#lp_status.rollbacks + 1,
@@ -265,6 +282,14 @@ rollback(StragglerTimestamp, Lp) ->
 	send_antimessages(AntimessagesToSend, NewLp).
 
 
+
+%
+% It searches into the queue in input the correspondent message to the antimessage 
+% @param Queue: it could be a list or a queue
+% @param Antimessage: a #message record 
+% @returns in case Queue is a list, [] if it does not find the message, the list without that message otherwise;
+%		   in case Queue is a queue, the output of the delete_element method
+%
 annihilate_antimsg(Queue, AntiMessage) ->
 	MessageToFind = #message{type=event, seqNumber=AntiMessage#message.seqNumber,
 					 lpSender=AntiMessage#message.lpSender, lpReceiver=AntiMessage#message.lpReceiver, payload=AntiMessage#message.payload, timestamp=AntiMessage#message.timestamp},
@@ -306,10 +331,14 @@ find_msg_2_test() ->
 					#message{type=ack, seqNumber=1, lpSender=1, lpReceiver=10, payload=3, timestamp=20}).
 
 
-%%
-%% Finds the correspondent message to the ack in input. The type of the message
-%% is given in input.
-%%
+%
+% It searches into the queue in input the correspondent message to the ack 
+% @param MessageQueue: it could be a list or a queue
+% @param Ack: a #message record 
+% @param Type: the #message record type field of the message to ack
+% @returns in case Queue is a list, [] if it does not find the message, the message otherwise;
+%		   in case Queue is a queue, the output of the delete_element method
+%
 find_message_to_ack(MessageQueue, Ack, Type) ->
 	#message{type=_, seqNumber=AckSeq, lpSender=LpSender, lpReceiver=LpReceiver, 
 			 payload=AckPayload, timestamp=AckTimestamp} = Ack,
@@ -372,21 +401,18 @@ check_correct_timestamp(LP_Timestamp, New_Timestamp) ->
 send_ack(Message, Lp) ->
 	#message{type=_, seqNumber=SeqNumber, lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp} = Message,
 	Ack = #message{type=ack, seqNumber=SeqNumber, lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp},
-	file:write_file("/home/luke/Desktop/erllog", io_lib:fwrite("\nSending message ~w ~w ~w ~w ~w ~w", [ack, self(), LPSender, LPReceiver, SeqNumber, Timestamp]), [append]),
 	send_message(Ack, Lp).
 
 
 send_marked_ack(Message, Lp) ->
 	#message{type=_, seqNumber=SeqNumber, lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp} = Message,
 	Ack = #message{type=marked_ack, seqNumber=SeqNumber, lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp},
-	file:write_file("/home/luke/Desktop/erllog", io_lib:fwrite("\nSending message ~w ~w ~w ~w ~w ~w", [ack, self(), LPSender, LPReceiver, SeqNumber, Timestamp]), [append]),
 	send_message(Ack, Lp).
 
 send_antimessage(Event, Lp) ->
 	%SeqNumber = Lp#lp_status.messageSeqNumber + 1,
 	#message{type=event, seqNumber=SeqNumber, lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp} = Event,
 	Antimessage = #message{type=antimessage, seqNumber=SeqNumber, lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp},
-	file:write_file("/home/luke/Desktop/erllog", io_lib:fwrite("\nSending message ~w ~w ~w ~w ~w ~w", [antimessage, self(), LPSender, LPReceiver, SeqNumber, Timestamp]), [append]),
 	send_message(Antimessage, Lp).
 
 %% 
@@ -440,7 +466,6 @@ send_message(Message, LPStatus) ->
 %%
 send_event(LPSender, LPReceiver, Payload, Timestamp, Lp) ->
 		SeqNumber = Lp#lp_status.messageSeqNumber + 1,
-		file:write_file("/home/luke/Desktop/erllog", io_lib:fwrite("\nSending message ~w ~w ~w ~w ~w ~w", [event, self(), LPSender, LPReceiver, SeqNumber, Timestamp]), [append]),
 		Message = #message{type=event, lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp, seqNumber=SeqNumber},
 		send_message(Message, Lp#lp_status{messageSeqNumber=SeqNumber}).
 
