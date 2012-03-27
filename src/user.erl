@@ -53,7 +53,7 @@ set_modelstate(Lp, ModelState) ->
 
 
 get_pid(LP) ->
-	Pid = global:whereis_name(list_to_existing_atom(string:concat("lp_",integer_to_list(LP)))),
+	Pid = global:whereis_name(list_to_atom(string:concat("lp_",integer_to_list(LP)))),
 	if
 		Pid == undefined -> erlang:error("The pid returned for the LP is undefined!\n", [LP,global:registered_names()]);
 		Pid /= undefined -> Pid
