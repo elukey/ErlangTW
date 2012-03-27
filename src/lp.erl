@@ -62,8 +62,7 @@ process_top_message(Lp) ->
 		(IsInboxEmpty == false) and (Lp#lp_status.status == running) -> 
 			{InboxMinEvent, RestOfInbox} = tree_utils:retrieve_min(Lp#lp_status.inbox_messages),
 			History = {Lp#lp_status.timestamp, Lp#lp_status.model_state, InboxMinEvent},
-			%file:write_file("/home/luke/Desktop/erllog", io_lib:fwrite("\n~w Processing event ~w", [self(), InboxMinEvent]), [append]),
-			NewLp = user:entity_function(InboxMinEvent, Lp),
+			NewLp = user:lp_function(InboxMinEvent, Lp#lp_status{timestamp=InboxMinEvent#message.timestamp}),
 			NewLp#lp_status{inbox_messages=RestOfInbox, proc_messages=queue:in(InboxMinEvent, NewLp#lp_status.proc_messages),
 							   history = queue:in(History, NewLp#lp_status.history), timestamp=InboxMinEvent#message.timestamp};
 		

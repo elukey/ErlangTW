@@ -1,2 +1,2 @@
--record(state, {value, seed, density, entities, lps}).
--record(payload, {entitySender, entityReceiver}).
+-record(state, {value, seed, density, lps, starting_events}).
+-record(payload, {value}).
