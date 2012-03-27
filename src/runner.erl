@@ -32,7 +32,7 @@ call_vms([Node| RestOfNodes], VMIndex,  LpNum, VMNum, InitModelState)->
 	LastLpIndex = get_last_lp_index(VMIndex, LpNum, VMNum),
 	rpc:call(Node, runner, create_LPs, [FirstLpIndex, LastLpIndex, InitModelState]),
 	io:format("\n~w has ~w ~w", [Node, FirstLpIndex, LastLpIndex]),
-	call_vms(RestOfNodes, VMIndex,  LpNum, VMNum, InitModelState).
+	call_vms(RestOfNodes, VMIndex-1,  LpNum, VMNum, InitModelState).
 
 
 create_LPs(LPNumMinIndex, LPNumMaxIndex,  _) when LPNumMaxIndex == LPNumMinIndex -> ok;
