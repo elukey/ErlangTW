@@ -16,12 +16,12 @@ main(LPNum, MaxTimestamp) ->
 distributed_main(LPNum, MaxTimestamp) ->
 	InitModelState = #state{value=1, seed=LPNum, density=0.5, lps=LPNum, starting_events=10},
 	ConnectedErlangVM = net_adm:world(),
-	io:format("\nConnected with the following nodes: ~w\n", [ConnectedErlangVM]),
 	LenConnectedErlangVM = length(ConnectedErlangVM),
 	if 
 		LenConnectedErlangVM >= 1 -> ok;
 		LenConnectedErlangVM == 0 -> erlang:exit("Some problems during the connection with the other erlang vms, please check.")
 	end,
+	io:format("\nConnected with the following nodes: ~w\n", [ConnectedErlangVM]),
 	call_vms(nodes(), LenConnectedErlangVM, LPNum, LenConnectedErlangVM, InitModelState),
 	start(LPNum),
 	gvt:gvt_controller(LPNum, MaxTimestamp).
@@ -30,7 +30,7 @@ call_vms([], _, _, _, _) -> ok;
 call_vms([Node| RestOfNodes], VMIndex,  LpNum, VMNum, InitModelState)->
 	FirstLpIndex = get_first_lp_index(VMIndex, LpNum, VMNum),
 	LastLpIndex = get_last_lp_index(VMIndex, LpNum, VMNum),
-	rpc:call(Node, create_LPs, [FirstLpIndex, LastLpIndex, InitModelState]),
+	rpc:call(Node, runner, create_LPs, [FirstLpIndex, LastLpIndex, InitModelState]),
 	io:format("\n~w has ~w ~w", [Node, FirstLpIndex, LastLpIndex]),
 	call_vms(RestOfNodes, VMIndex,  LpNum, VMNum, InitModelState).
 
