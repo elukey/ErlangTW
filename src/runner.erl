@@ -1,6 +1,6 @@
 -module(runner).
 
--export([main/2, distributed_main/2]).
+-export([main/2, distributed_main/2, create_LPs/3]).
 -include("user_include.hrl").
 -include("common.hrl").
 
@@ -22,23 +22,39 @@ distributed_main(LPNum, MaxTimestamp) ->
 		LenConnectedErlangVM == 0 -> erlang:exit("Some problems during the connection with the other erlang vms, please check.")
 	end,
 	io:format("\nConnected with the following nodes: ~w\n", [ConnectedErlangVM]),
-	call_vms(nodes(), LenConnectedErlangVM, LPNum, LenConnectedErlangVM, InitModelState),
+	call_vms(ConnectedErlangVM, LenConnectedErlangVM, LPNum, LenConnectedErlangVM, InitModelState),
+	global:sync(),
 	start(LPNum),
 	gvt:gvt_controller(LPNum, MaxTimestamp).
 
-call_vms([], _, _, _, _) -> ok;
+call_vms([], 0, _, _, _) -> ok;
 call_vms([Node| RestOfNodes], VMIndex,  LpNum, VMNum, InitModelState)->
 	FirstLpIndex = get_first_lp_index(VMIndex, LpNum, VMNum),
 	LastLpIndex = get_last_lp_index(VMIndex, LpNum, VMNum),
-	rpc:call(Node, runner, create_LPs, [FirstLpIndex, LastLpIndex, InitModelState]),
+	io:format("\nDeploying Lps from ~w to ~w on node ~w", [FirstLpIndex, LastLpIndex, Node]),
+	if 
+		node() == Node -> 
+			Result = create_LPs(FirstLpIndex, LastLpIndex, InitModelState);
+		node() /= Node ->
+			Result = rpc:call(Node, runner, create_LPs, [FirstLpIndex, LastLpIndex, InitModelState])
+	end,
+	case Result of 
+		{badrpc, Error} -> erlang:error(Error);
+		Result -> ok
+	end,
 	io:format("\n~w has ~w ~w", [Node, FirstLpIndex, LastLpIndex]),
 	call_vms(RestOfNodes, VMIndex-1,  LpNum, VMNum, InitModelState).
 
 
-create_LPs(LPNumMinIndex, LPNumMaxIndex,  _) when LPNumMaxIndex == LPNumMinIndex -> ok;
+create_LPs(LPNumMinIndex, LPNumMaxIndex,  _) when LPNumMaxIndex < LPNumMinIndex -> ok;
 create_LPs(LPNumMinIndex, LPNumMaxIndex, InitModelState) ->
 	Pid = spawn(lp,start,[LPNumMaxIndex,InitModelState#state{seed=LPNumMaxIndex}]),
-	global:register_name(list_to_atom(string:concat("lp_",integer_to_list(LPNumMaxIndex))),Pid),
+	Result = global:register_name(list_to_atom(string:concat("lp_",integer_to_list(LPNumMaxIndex))),Pid),
+	if 
+		Result == yes -> ok;
+		Result == no ->
+			erlang:error("Global register name has failed!")
+	end,
 	link(Pid),
 	create_LPs(LPNumMinIndex, LPNumMaxIndex-1, InitModelState).
 
