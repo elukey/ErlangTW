@@ -14,8 +14,9 @@ dequeue_history_until(Queue, Message) ->
 		Guard == false ->
 			{_,_,Item} = queue:get_r(Queue),
 			if
-				Item == Message -> 
-					 Queue;
+				Item == Message ->
+					{{value,Tail}, NewQueue} = queue:out_r(Queue),
+					{Tail, NewQueue};
 				Item /= Message ->
 					{_, NewQueue} = queue:out_r(Queue),
 					dequeue_history_until(NewQueue, Message)
@@ -41,10 +42,10 @@ dequeue_until_aux(Queue, Timestamp, Acc) ->
 		Guard == false ->
 			Item = queue:get_r(Queue),
 			if
-				Item#message.timestamp > Timestamp -> 
+				Item#message.timestamp >= Timestamp -> 
 					 {{value, ItemDequeued}, NewQueue} = queue:out_r(Queue),
 					 dequeue_until_aux(NewQueue, Timestamp, [ItemDequeued] ++ Acc);
-				Item#message.timestamp =< Timestamp -> {Queue, Acc}
+				Item#message.timestamp < Timestamp -> {Queue, Acc}
 			end
 	end.
 

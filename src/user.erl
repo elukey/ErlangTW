@@ -1,41 +1,77 @@
 -module(user).
--export([lp_function/2, start_function/1, newton_radix/2, get_pid/1]).
+-export([lp_function/2, start_function/1, newton_radix/2, get_pid/1, terminate_model/1]).
 
 -include("user_include.hrl").
 -include("common.hrl").
 
 start_function(Lp) ->
-	StartModel = Lp#lp_status.init_model_state,
-	generate_events(StartModel#state.starting_events, Lp).
+	StartModel = get_modelstate(Lp),
+	LpsNum = StartModel#state.lps,
+	EntitiesNum = StartModel#state.entities,
+	LpId = Lp#lp_status.my_id,
+	FirstEntity = get_first_entity_index(LpId, EntitiesNum, LpsNum),
+	LastEntity = get_last_entity_index(LpId, EntitiesNum, LpsNum), 
+	io:format("\nI am ~w and my first entity is ~w and last is ~w", [self(), FirstEntity, LastEntity]),
+	NewLp = generate_events(StartModel#state.starting_events, Lp, FirstEntity, LastEntity),
+	NewLp#lp_status{init_model_state=NewLp#lp_status.model_state}.
 
-generate_events(Number, Lp) when Number == 0 -> Lp;
-generate_events(Number, Lp) ->
-	generate_events(Number-1, generate_starting_event(Lp)).
+generate_events(_, Lp, FirstEntity, LastEntity) when FirstEntity -1 == LastEntity -> Lp;
+generate_events(Number, Lp, FirstEntity, LastEntity) ->
+	generate_events(Number, generate_starting_events(Lp, LastEntity, Number), FirstEntity, LastEntity-1).
 	
-generate_starting_event(Lp) ->
+generate_starting_events(Lp, Entity, Number) when Number == 0 -> 
 	ModelState = get_modelstate(Lp),
-	LpsNumber = ModelState#state.lps,
-	LpReceiverPid = self(),
-	{LpSenderId, NewSeed} = lcg:get_random(ModelState#state.seed, 1, LpsNumber),
-	LpSenderPid = get_pid(LpSenderId),
-	Payload = #payload{value=0},
-	{Timestamp, NewSeed2} = lcg:get_exponential_random(NewSeed),
-	Event = #message{lpSender=LpSenderPid, lpReceiver=LpReceiverPid, payload=Payload, type=event, seqNumber=0, timestamp=Timestamp},
-	%io:format("\n~wEvent Generated: ~w", [self(), Event]),
-	Lp#lp_status{inbox_messages=tree_utils:safe_insert(Event, Lp#lp_status.inbox_messages), model_state=ModelState#state{seed=NewSeed2}}.
-		
-
+	set_modelstate(Lp, ModelState#state{entities_state=dict:store(Entity, 0, ModelState#state.entities_state)});
+generate_starting_events(Lp, Entity, Number) ->
+	ModelState = get_modelstate(Lp),
+	{Event, NewModelState} = generate_event_from_receiver(Entity, 0, 0, ModelState),
+	%io:format("\nEvent generated for entity ~w is ~w", [Entity, Event]),
+	generate_starting_events(Lp#lp_status{inbox_messages=tree_utils:safe_insert(Event#message{seqNumber=0}, 
+																							Lp#lp_status.inbox_messages), model_state=NewModelState}, Entity, Number-1).
 lp_function(Event, Lp) ->
-	Payload=newton_radix(2, 10000),
+	newton_radix(2, 10000),
+	#payload{entityReceiver=EntityReceiver} = Event#message.payload,
 	ModelState = get_modelstate(Lp),
-	LpsNumber = ModelState#state.lps,
-	{LpReceiver, NewSeed} = lcg:get_random(ModelState#state.seed, 1, LpsNumber),
-	LpSender = self(),
-	{ExpDeltaTime, NewSeed2} =  lcg:get_exponential_random(NewSeed),
-	NewTimestamp = Event#message.timestamp + ExpDeltaTime,
-	NewLp = set_modelstate(Lp, ModelState#state{seed=NewSeed2}),
-	lp:send_event(LpSender, get_pid(LpReceiver), Payload, NewTimestamp, NewLp).
+	MaxTimestap = ModelState#state.max_timestamp,
+	EntityReceiverTimestamp = dict:fetch(EntityReceiver, ModelState#state.entities_state),
+	if
+		Event#message.timestamp < EntityReceiverTimestamp ->
+			io:format("\n\n~w Entity timestamp ~w message timestamp ~w LP timestamp ~w\n", [self(), EntityReceiverTimestamp, Event#message.timestamp, Lp#lp_status.timestamp]),
+			erlang:error("Timestamp less than expected!");
+		Event#message.timestamp >= EntityReceiverTimestamp -> ok
+	end,
+	%io:format("\nEntity ~w with timestamp ~w", [EntityReceiver, dict:find(EntityReceiver, ModelState#state.entities_state)]),
+	if
+		EntityReceiverTimestamp >= MaxTimestap ->
+			Lp;
+		EntityReceiverTimestamp < MaxTimestap ->
+		NewModelState = ModelState#state{entities_state=dict:store(EntityReceiver, Event#message.timestamp, ModelState#state.entities_state)},
+		{NewEvent, NewModelState2} = generate_event_from_sender(EntityReceiver, Event#message.timestamp, 1, NewModelState),
+		#message{lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp} = NewEvent, 
+		lp:send_event(LPSender, LPReceiver, Payload, Timestamp, Lp#lp_status{model_state=NewModelState2})
+	end.
 
+terminate_model(Lp) ->
+	ModelState = get_modelstate(Lp),
+	io:format("\nEntities: ~w", [ModelState#state.entities_state]).
+
+generate_event_from_receiver(EntityReceiver, Timestamp, PayloadValue, ModelState) ->
+	{ExpDeltaTime, NewSeed} =  lcg:get_exponential_random(ModelState#state.seed),
+	NewTimestamp = Timestamp + ExpDeltaTime,
+	{EntitySender, NewSeed2} = lcg:get_random(NewSeed, 1, ModelState#state.entities),
+	LpReceiver = which_lp_controls(EntitySender, ModelState#state.entities, ModelState#state.lps),
+	Payload = #payload{entitySender=EntitySender, entityReceiver=EntityReceiver, value=PayloadValue},
+	Event = #message{type=event, lpSender=self(), lpReceiver=LpReceiver, payload=Payload, seqNumber=0, timestamp=NewTimestamp},
+	{Event, ModelState#state{seed=NewSeed2}}.
+
+generate_event_from_sender(EntitySender, Timestamp, PayloadValue, ModelState) ->
+	{ExpDeltaTime, NewSeed} =  lcg:get_exponential_random(ModelState#state.seed),
+	NewTimestamp = Timestamp + ExpDeltaTime,
+	{EntityReceiver, NewSeed2} = lcg:get_random(NewSeed, 1, ModelState#state.entities),
+	LpReceiver = which_lp_controls(EntityReceiver, ModelState#state.entities, ModelState#state.lps),
+	Payload = #payload{entitySender=EntitySender, entityReceiver=EntityReceiver, value=PayloadValue},
+	Event = #message{type=event, lpSender=self(), lpReceiver=LpReceiver, payload=Payload, seqNumber=0, timestamp=NewTimestamp},
+	{Event, ModelState#state{seed=NewSeed2}}.
 
 newton_radix(Number, FPOp) ->
 	newton_radix_aux(Number, trunc(FPOp/5), 1, 0.5).
@@ -58,3 +94,25 @@ get_pid(LP) ->
 		Pid == undefined -> erlang:error("The pid returned for the LP is undefined!\n", [LP,global:registered_names()]);
 		Pid /= undefined -> Pid
 	end.
+
+get_first_entity_index(LpId, EntitiesNum, LpsNum) ->
+       trunc((LpId - 1)*(EntitiesNum/LpsNum)+1).
+
+get_last_entity_index(LpId, EntitiesNum, LpsNum) ->
+       get_first_entity_index(LpId, EntitiesNum, LpsNum) + trunc(EntitiesNum/LpsNum) -1.
+
+which_lp_controls(Entity, EntitiesNum, LpsNum) ->
+       EntitiesEachLP = trunc(EntitiesNum / LpsNum),
+       if
+               (Entity rem EntitiesEachLP == 0) and (Entity /= 0) -> 
+                       LPid = trunc(Entity / EntitiesEachLP);
+               (Entity rem EntitiesEachLP == 0) and (Entity == 0) -> 
+                       LPid = 1;
+               Entity rem EntitiesEachLP /= 0 -> 
+                       LPid = trunc(Entity / EntitiesEachLP) + 1
+       end,
+       get_pid(LPid).
+
+
+
+

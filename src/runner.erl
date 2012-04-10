@@ -1,11 +1,14 @@
 -module(runner).
 
--export([main/2, distributed_main/2, create_LPs/3]).
+-export([main/3, distributed_main/2, create_LPs/3, stop_vms/1]).
 -include("user_include.hrl").
 -include("common.hrl").
 
-main(LPNum, MaxTimestamp) -> 
-	InitModelState = #state{value=1, seed=LPNum, density=0.5, lps=LPNum, starting_events=10},
+main(LPNum, EntitiesNum, MaxTimestamp) -> 
+	Density = 0.5, 
+	InitModelState = #state{value=1, seed=LPNum, density=Density, lps=LPNum, 
+							starting_events=10, entities=EntitiesNum, entities_state=dict:new(),
+							max_timestamp=MaxTimestamp},
 	create_LPs(1, LPNum, InitModelState),
 	io:format("~nThreads spawned~n"),
 	start(LPNum),
@@ -26,6 +29,17 @@ distributed_main(LPNum, MaxTimestamp) ->
 	global:sync(),
 	start(LPNum),
 	gvt:gvt_controller(LPNum, MaxTimestamp).
+
+
+stop_vms([]) -> ok;
+stop_vms([Node| RestOfNodes]) ->
+	if 
+		node() == Node -> 
+			ok;
+		node() /= Node ->
+			rpc:call(Node, init, stop, [])
+	end, 
+	stop_vms(RestOfNodes).
 
 call_vms([], 0, _, _, _) -> ok;
 call_vms([Node| RestOfNodes], VMIndex,  LpNum, VMNum, InitModelState)->
