@@ -26,8 +26,9 @@ generate_starting_events(Lp, Entity, Number) ->
 	ModelState = get_modelstate(Lp),
 	{Event, NewModelState} = generate_event_from_receiver(Entity, 0, 0, ModelState),
 	%io:format("\nEvent generated for entity ~w is ~w", [Entity, Event]),
-	generate_starting_events(Lp#lp_status{inbox_messages=tree_utils:safe_insert(Event#message{seqNumber=0}, 
-																							Lp#lp_status.inbox_messages), model_state=NewModelState}, Entity, Number-1).
+	NewLp = lp:send_event(Event#message.lpSender, Event#message.lpReceiver, Event#message.payload, Event#message.timestamp, Lp),
+	generate_starting_events(NewLp#lp_status{model_state=NewModelState}, Entity, Number-1).
+
 lp_function(Event, Lp) ->
 	newton_radix(2, 10000),
 	#payload{entityReceiver=EntityReceiver} = Event#message.payload,
@@ -45,15 +46,16 @@ lp_function(Event, Lp) ->
 		EntityReceiverTimestamp >= MaxTimestap ->
 			Lp;
 		EntityReceiverTimestamp < MaxTimestap ->
-		NewModelState = ModelState#state{entities_state=dict:store(EntityReceiver, Event#message.timestamp, ModelState#state.entities_state)},
-		{NewEvent, NewModelState2} = generate_event_from_sender(EntityReceiver, Event#message.timestamp, 1, NewModelState),
-		#message{lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp} = NewEvent, 
-		lp:send_event(LPSender, LPReceiver, Payload, Timestamp, Lp#lp_status{model_state=NewModelState2})
+			NewModelState = ModelState#state{entities_state=dict:store(EntityReceiver, Event#message.timestamp, ModelState#state.entities_state)},
+			{NewEvent, NewModelState2} = generate_event_from_sender(EntityReceiver, Event#message.timestamp, 1, NewModelState),
+			#message{lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp} = NewEvent, 
+			lp:send_event(LPSender, LPReceiver, Payload, Timestamp, Lp#lp_status{model_state=NewModelState2})
 	end.
 
 terminate_model(Lp) ->
 	ModelState = get_modelstate(Lp),
-	io:format("\nEntities: ~w", [ModelState#state.entities_state]).
+	io:format("\n~w Entities: ~w", [self(),ModelState#state.entities_state]),
+	io:format("\nTotal message in inbox: ~w", [Lp#lp_status.inbox_messages]).
 
 generate_event_from_receiver(EntityReceiver, Timestamp, PayloadValue, ModelState) ->
 	{ExpDeltaTime, NewSeed} =  lcg:get_exponential_random(ModelState#state.seed),

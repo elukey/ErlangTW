@@ -17,7 +17,7 @@ main(LPNum, EntitiesNum, MaxTimestamp) ->
 
 
 distributed_main(LPNum, MaxTimestamp) ->
-	InitModelState = #state{value=1, seed=LPNum, density=0.5, lps=LPNum, starting_events=10},
+	InitModelState = #state{value=1, seed=LPNum, density=0.5, lps=LPNum, starting_events=1},
 	ConnectedErlangVM = net_adm:world(),
 	LenConnectedErlangVM = length(ConnectedErlangVM),
 	if 

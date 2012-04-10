@@ -42,10 +42,7 @@ main_loop(Lp) ->
 				main_loop(process_top_message(process_received_messages(Lp, Lp#lp_status.max_received_messages)))
 			end;
 
-		Lp#lp_status.status == prepare_to_terminate -> 
-			receive 
-				{terminate, _} -> ok
-			end
+		Lp#lp_status.status == terminated -> user:terminate_model(Lp)
 	end.
 	
 
@@ -59,15 +56,17 @@ main_loop(Lp) ->
 process_top_message(Lp) ->
 	IsInboxEmpty = gb_trees:is_empty(Lp#lp_status.inbox_messages),
 	if 
-		(IsInboxEmpty == false) and (Lp#lp_status.status == running) -> 
+		(IsInboxEmpty == false) and ((Lp#lp_status.status == running) or (Lp#lp_status.status == prepare_to_terminate)) -> 
 			{InboxMinEvent, RestOfInbox} = tree_utils:retrieve_min(Lp#lp_status.inbox_messages),
 			History = {Lp#lp_status.timestamp, Lp#lp_status.model_state, InboxMinEvent},
 			NewLp = user:lp_function(InboxMinEvent, Lp#lp_status{timestamp=InboxMinEvent#message.timestamp}),
 			NewLp#lp_status{inbox_messages=RestOfInbox, proc_messages=queue:in(InboxMinEvent, NewLp#lp_status.proc_messages),
 							   history = queue:in(History, NewLp#lp_status.history), timestamp=InboxMinEvent#message.timestamp};
 		
-		(IsInboxEmpty == false) and (Lp#lp_status.status == prepare_to_terminate) -> Lp;
-		
+		(IsInboxEmpty == true) and (Lp#lp_status.status == prepare_to_terminate) -> 
+			receive 
+				{terminate, _} -> Lp#lp_status{status=terminated}
+			end;
 		(IsInboxEmpty == true) -> Lp
 	end.
 
@@ -105,11 +104,13 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 					InboxResult = tree_utils:is_enqueued(Message#message{type=event},  LpAfterSend#lp_status.inbox_messages),
 					if 
 						InboxResult == false ->
-							ProcResult = annihilate_antimsg(LpAfterSend#lp_status.proc_messages, Message),
+							ProcResult = queue:member(Message#message{type=event}, LpAfterSend#lp_status.proc_messages),
+							%ProcResult = annihilate_antimsg(LpAfterSend#lp_status.proc_messages, Message),
 							if 
-								ProcResult /= false ->
-									process_received_messages(rollback(Message#message.timestamp, 
-																	   LpAfterSend#lp_status{proc_messages=ProcResult}), MaxMessageToProcess-1);
+								ProcResult == true ->
+									LpAfterRollback = rollback(Message#message.timestamp, LpAfterSend),
+									%io:format("\nAnnhilated! ~w", [Message]),
+									process_received_messages(LpAfterRollback#lp_status{proc_messages=annihilate_antimsg(LpAfterSend#lp_status.proc_messages, Message)}, MaxMessageToProcess-1);
 								ProcResult == false -> 
 									process_received_messages(LpAfterSend#lp_status{anti_messages=queue:in(Message, LpAfterSend#lp_status.anti_messages)}, MaxMessageToProcess-1)
 							end;
@@ -198,9 +199,9 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 					MarkedMinTimestamp = Lp#lp_status.samadi_marked_messages_min,
 					LocalMin = compute_local_minimum(InboxHeadEvent, ToAckHeadEvent, MarkedMinTimestamp, Lp),
 					MasterPid ! {my_local_min, self(), LocalMin},
-					io:format("\n~w with timestamp ~w LOCALMIN ~w local min values: ~w ~w ~w, total rollbacks ~w to_ack ~w inbox leng ~w to_ack leng ~w seqNumber ~w", 
+					io:format("\n~w with timestamp ~w LOCALMIN ~w local min values: ~w ~w ~w, total rollbacks ~w to_ack ~w inbox leng ~w to_ack leng ~w  proc leng ~w seqNumber ~w", 
 							  [self(), Lp#lp_status.timestamp, LocalMin, InboxHeadEvent, ToAckHeadEvent, MarkedMinTimestamp, Lp#lp_status.rollbacks,Lp#lp_status.to_ack_messages, 
-								length(gb_trees:keys(Lp#lp_status.inbox_messages)), length(Lp#lp_status.to_ack_messages),
+								gb_trees:size(Lp#lp_status.inbox_messages), length(Lp#lp_status.to_ack_messages), queue:len(Lp#lp_status.proc_messages),
 								Lp#lp_status.messageSeqNumber]),
 					process_received_messages(Lp#lp_status{samadi_find_mode=true, samadi_marked_messages_min=0, received_messages=RemainingQueue}, MaxMessageToProcess-1);
 				
@@ -211,7 +212,8 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 							exit("Incorrect GVT");
 						GlobalMinTimestamp >= Lp#lp_status.gvt -> ok
 					end,
-					process_received_messages(Lp#lp_status{samadi_find_mode=false, samadi_marked_messages_min=0, gvt=GlobalMinTimestamp, received_messages=RemainingQueue}, MaxMessageToProcess-1);
+					NewLp = Lp#lp_status{samadi_find_mode=false, samadi_marked_messages_min=0, gvt=GlobalMinTimestamp, received_messages=RemainingQueue},
+					process_received_messages(gvt_cleaning(NewLp), MaxMessageToProcess-1);
 			
 				% SPECIAL MESSAGE: Start the simulation
 				{start} ->
@@ -228,6 +230,12 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 			end
 	end.
 
+
+gvt_cleaning(Lp) ->
+	GVT = Lp#lp_status.gvt,
+	Lp#lp_status{sent_messages=[Message || Message <- Lp#lp_status.sent_messages, Message#message.timestamp >= GVT],
+				 proc_messages=queue:filter(fun(X) -> if X#message.timestamp >= GVT -> true; X#message.timestamp < GVT -> false end end, Lp#lp_status.proc_messages),
+				 history=queue:filter(fun(X) -> {Timestamp,_,_} = X, if Timestamp >= GVT -> true; Timestamp < GVT -> false end end, Lp#lp_status.history)}.
 
 compute_local_minimum([], [], 0, Lp) -> Lp#lp_status.timestamp;
 compute_local_minimum([], [], MinMarkedTimestamp, _) when MinMarkedTimestamp > 0 -> MinMarkedTimestamp;
@@ -279,7 +287,7 @@ rollback(StragglerTimestamp, Lp) ->
 					NewLp = restore_history(Head, Lp#lp_status{inbox_messages=NewInboxQueue, rollbacks=RollBacks, proc_messages=NewProcQueue, 
 													sent_messages=NewQueueSentMessages});
 				ToReProcessMsgs == [] ->
-					io:format("\nNessun evento da riprocessare, rollback to ~w ts lp ~w sent messages ~w", [StragglerTimestamp, Lp#lp_status.timestamp, Lp#lp_status.sent_messages]),
+					io:format("\nNessun evento da riprocessare, rollback to ~w ts lp ~w proc messages ~w", [StragglerTimestamp, Lp#lp_status.timestamp, queue:get_r(Lp#lp_status.proc_messages)]),
 					NewLp = Lp#lp_status{inbox_messages=NewInboxQueue, rollbacks=RollBacks, proc_messages=NewProcQueue, 
 														  sent_messages=NewQueueSentMessages, timestamp=StragglerTimestamp}
 			end
@@ -450,7 +458,7 @@ send_message(Message, LPStatus) ->
 			LPDest ! Message,
 			if 
 				(Message#message.type == event) -> 
-					LPStatus#lp_status{to_ack_messages=list_utils:insert_ordered(LPStatus#lp_status.to_ack_messages, Message), sent_messages=list_utils:insert_ordered(LPStatus#lp_status.sent_messages, Message)};
+					LPStatus#lp_status{to_ack_messages=list_utils:insert_ordered(LPStatus#lp_status.to_ack_messages, Message), sent_messages=LPStatus#lp_status.sent_messages ++ [Message]};
 				(Message#message.type == antimessage) -> 
 					LPStatus#lp_status{to_ack_messages=list_utils:insert_ordered(LPStatus#lp_status.to_ack_messages, Message)};
 				(Message#message.type == ack) or (Message#message.type == marked_ack) ->
@@ -459,7 +467,7 @@ send_message(Message, LPStatus) ->
 		LPDest == MyLP ->
 			if 
 				(Message#message.type == event) -> 
-					LPStatus#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages), sent_messages=list_utils:insert_ordered(LPStatus#lp_status.sent_messages, Message)};
+					LPStatus#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages), sent_messages=LPStatus#lp_status.sent_messages ++ [Message]};
 				(Message#message.type == antimessage) ->
 					LPStatus#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)};
 				(Message#message.type == ack) or (Message#message.type == marked_ack) ->
