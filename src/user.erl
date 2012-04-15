@@ -24,7 +24,7 @@ generate_starting_events(Lp, Entity, Number) when Number == 0 ->
 	set_modelstate(Lp, ModelState#state{entities_state=dict:store(Entity, 0, ModelState#state.entities_state)});
 generate_starting_events(Lp, Entity, Number) ->
 	ModelState = get_modelstate(Lp),
-	{Event, NewModelState} = generate_event_from_receiver(Entity, 0, 0, ModelState),
+	{Event, NewModelState} = generate_event_from_sender(Entity, 0, 0, ModelState),
 	%io:format("\nEvent generated for entity ~w is ~w", [Entity, Event]),
 	NewLp = lp:send_event(Event#message.lpSender, Event#message.lpReceiver, Event#message.payload, Event#message.timestamp, Lp),
 	generate_starting_events(NewLp#lp_status{model_state=NewModelState}, Entity, Number-1).

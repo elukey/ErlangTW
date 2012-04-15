@@ -192,17 +192,20 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 				{compute_local_minimum, MasterPid} ->
 					IsInboxEmpty = gb_trees:is_empty(Lp#lp_status.inbox_messages),
 					if
-						IsInboxEmpty == true -> InboxHeadEvent = [];
-						IsInboxEmpty == false -> {_, [InboxHeadEvent|_]} = gb_trees:smallest(Lp#lp_status.inbox_messages)
+						IsInboxEmpty == true -> InboxHeadEventTimestamp = -1;
+						IsInboxEmpty == false -> 
+							{_, [InboxHeadEvent|_]} = gb_trees:smallest(Lp#lp_status.inbox_messages),
+							InboxHeadEventTimestamp = InboxHeadEvent#message.timestamp
 					end,
 					ToAckHeadEvent = list_utils:first_element(Lp#lp_status.to_ack_messages),
+					if
+						ToAckHeadEvent == [] -> ToAckHeadEventTimestamp = -1;
+						ToAckHeadEvent /= [] -> ToAckHeadEventTimestamp = ToAckHeadEvent#message.timestamp
+					end,
 					MarkedMinTimestamp = Lp#lp_status.samadi_marked_messages_min,
-					LocalMin = compute_local_minimum(InboxHeadEvent, ToAckHeadEvent, MarkedMinTimestamp, Lp),
+					LocalMin = compute_local_minimum(InboxHeadEventTimestamp, ToAckHeadEventTimestamp, MarkedMinTimestamp, Lp#lp_status.timestamp),
 					MasterPid ! {my_local_min, self(), LocalMin},
-					io:format("\n~w with timestamp ~w LOCALMIN ~w local min values: ~w ~w ~w, total rollbacks ~w to_ack ~w inbox leng ~w to_ack leng ~w  proc leng ~w seqNumber ~w", 
-							  [self(), Lp#lp_status.timestamp, LocalMin, InboxHeadEvent, ToAckHeadEvent, MarkedMinTimestamp, Lp#lp_status.rollbacks,Lp#lp_status.to_ack_messages, 
-								gb_trees:size(Lp#lp_status.inbox_messages), length(Lp#lp_status.to_ack_messages), queue:len(Lp#lp_status.proc_messages),
-								Lp#lp_status.messageSeqNumber]),
+					io:format("\n~w with timestamp ~w LOCALMIN ~w", [self(), Lp#lp_status.timestamp, LocalMin]),
 					process_received_messages(Lp#lp_status{samadi_find_mode=true, samadi_marked_messages_min=0, received_messages=RemainingQueue}, MaxMessageToProcess-1);
 				
 				% RECEIVED GLOBAL VIRTUAL TIME (SAMADI ALGORITHM)
@@ -237,27 +240,22 @@ gvt_cleaning(Lp) ->
 				 proc_messages=queue:filter(fun(X) -> if X#message.timestamp >= GVT -> true; X#message.timestamp < GVT -> false end end, Lp#lp_status.proc_messages),
 				 history=queue:filter(fun(X) -> {Timestamp,_,_} = X, if Timestamp >= GVT -> true; Timestamp < GVT -> false end end, Lp#lp_status.history)}.
 
-compute_local_minimum([], [], 0, Lp) -> Lp#lp_status.timestamp;
-compute_local_minimum([], [], MinMarkedTimestamp, _) when MinMarkedTimestamp > 0 -> MinMarkedTimestamp;
-compute_local_minimum([], ToAckEvent, 0, _) when ToAckEvent /= []-> ToAckEvent#message.timestamp;
-compute_local_minimum(InboxEvent, [], 0, _) when InboxEvent /= [] -> InboxEvent#message.timestamp;
-compute_local_minimum(InboxEvent, ToAckEvent, 0, _) when (ToAckEvent /= []) and (InboxEvent /= []) -> 
-	if
-		InboxEvent#message.timestamp =< ToAckEvent#message.timestamp -> InboxEvent#message.timestamp;
-		InboxEvent#message.timestamp > ToAckEvent#message.timestamp ->  ToAckEvent#message.timestamp
-	end;
-compute_local_minimum([], ToAckEvent, MinMarkedTimestamp, _) when (ToAckEvent /= []) and (MinMarkedTimestamp > 0) -> 
-	if
-		MinMarkedTimestamp =< ToAckEvent#message.timestamp -> MinMarkedTimestamp;
-		MinMarkedTimestamp > ToAckEvent#message.timestamp ->  ToAckEvent#message.timestamp
-	end;
-compute_local_minimum(InboxEvent, [], MinMarkedTimestamp, _) when (InboxEvent /= []) and (MinMarkedTimestamp > 0) -> 
-	if
-		MinMarkedTimestamp =< InboxEvent#message.timestamp -> MinMarkedTimestamp;
-		MinMarkedTimestamp > InboxEvent#message.timestamp ->  InboxEvent#message.timestamp
-	end;
-compute_local_minimum(InboxEvent, ToAckEvent, MinMarkedTimestamp, _) when (ToAckEvent /= []) and (InboxEvent /= []) and (MinMarkedTimestamp > 0) ->
-	lists:min([ToAckEvent#message.timestamp, InboxEvent#message.timestamp, MinMarkedTimestamp]).
+compute_local_minimum(InboxHeadEventTimestamp, ToAckHeadEventTimestamp, MarkedMinTimestamp, LpTimestamp) ->
+	ComputedLocalMin = lists:foldl(fun(X,Acc) ->
+						if
+							(X > 0) and (Acc > 0) and (X < Acc) -> X;
+							(X > 0) and (Acc > 0) and (X >= Acc) -> Acc;
+							(X =< 0) and (Acc > 0) -> Acc;
+							(X =< 0) and (Acc =< 0) -> Acc;
+							(X > 0) and (Acc =< 0) -> X
+						end end,
+						-1, [InboxHeadEventTimestamp, ToAckHeadEventTimestamp, MarkedMinTimestamp]),
+	if 
+		ComputedLocalMin =< 0 ->  LpTimestamp;
+		ComputedLocalMin > 0 ->   ComputedLocalMin
+	end.
+
+
 
 
 %
