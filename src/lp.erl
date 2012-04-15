@@ -482,21 +482,13 @@ send_event(LPSender, LPReceiver, Payload, Timestamp, Lp) ->
 		send_message(Message, Lp#lp_status{messageSeqNumber=SeqNumber}).
 
 
-
 %%
 %% Restores the last known entity's state
 %% related to a particular timestamp.
 %%
 restore_history(Event, Lp) ->
-	{ElementToRestore, HistoryToRestore} = queue_utils:dequeue_history_until(Lp#lp_status.history, Event),
-	IsHistoryToRestoreEmpty = queue:is_empty(HistoryToRestore),
-	if
-		IsHistoryToRestoreEmpty == true ->
-			init_state_vars(Lp);
-		HistoryToRestore /= false ->
-			restore_state_vars(ElementToRestore, Lp)
-	end.
-					
+	{ElementToRestore, NewHistory} = queue_utils:dequeue_history_until(Lp#lp_status.history, Event),
+	restore_state_vars(ElementToRestore, Lp#lp_status{history=NewHistory}).		
 	
 %%
 %% Takes a past entity's state in input and
