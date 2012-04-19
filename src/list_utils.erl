@@ -1,5 +1,5 @@
 -module(list_utils).
--export([insert_ordered_sublist/2, insert_ordered/2, weak_match_pred/1, weak_not_match_pred/1, early_state_var/1, first_element/1, not_match_nothing/1]).
+-export([insert_ordered_sublist/2, insert_ordered/2, early_state_var/1, first_element/1, not_match_nothing/1]).
 
 -include("user_include.hrl").
 -include("common.hrl").
@@ -58,50 +58,6 @@ insert_ordered_3_test() ->
 		list_utils:insert_ordered([#message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=1}, 
 								   #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=3}], 
 								   #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2}).
-
-
-
-weak_match_pred(MessageToMatch) -> 
-	#message{type=_, seqNumber=SeqToMatch, lpSender=lpSenderToMatch, lpReceiver=lpReceiverToMatch, 
-			 payload=PayloadToMatch, timestamp=TimestampToMatch} = MessageToMatch,
-	fun(Message) ->
-		#message{type=_, seqNumber=SeqMessage, lpSender=lpSenderMessage, lpReceiver=lpReceiverMessage, 
-			 payload=PayloadMessage, timestamp=TimestampMessage} = Message,		
-		if
-			{SeqToMatch, lpSenderToMatch, lpReceiverToMatch, PayloadToMatch, TimestampToMatch} == {SeqMessage, lpSenderMessage, lpReceiverMessage, 
-			PayloadMessage, TimestampMessage} ->	true;
-			{SeqToMatch, lpSenderToMatch, lpReceiverToMatch, PayloadToMatch, TimestampToMatch} /= {SeqMessage, lpSenderMessage, lpReceiverMessage, 
-			PayloadMessage, TimestampMessage} ->	false
-		end
-	end.
-
-%% unit testing
-weak_match_pred_1_test() -> true = (list_utils:weak_match_pred(#message{type=event, seqNumber=1, lpSender=1, lpReceiver=2, payload=3, timestamp=20}))
-							  (#message{type=ack, seqNumber=1, lpSender=1, lpReceiver=2, payload=3, timestamp=20}).
-weak_match_pred_2_test() -> false = (list_utils:weak_match_pred(
-								 #message{type=event, seqNumber=1, lpSender=1, lpReceiver=2, payload=3, timestamp=20}))
-							  (#message{type=ack, seqNumber=12, lpSender=1, lpReceiver=2, payload=3, timestamp=20}). 
-
-
-weak_not_match_pred(MessageToMatch) -> 
-	#message{type=_, seqNumber=SeqToMatch, lpSender=lpSenderToMatch, lpReceiver=lpReceiverToMatch, 
-			 payload=PayloadToMatch, timestamp=TimestampToMatch} = MessageToMatch,
-	fun(Message) ->
-		#message{type=_, seqNumber=SeqMessage, lpSender=lpSenderMessage, lpReceiver=lpReceiverMessage, 
-			 payload=PayloadMessage, timestamp=TimestampMessage} = Message,		
-		if
-			{SeqToMatch, lpSenderToMatch, lpReceiverToMatch, PayloadToMatch, TimestampToMatch} == {SeqMessage, lpSenderMessage, lpReceiverMessage, 
-			PayloadMessage, TimestampMessage} ->	false;
-			{SeqToMatch, lpSenderToMatch, lpReceiverToMatch, PayloadToMatch, TimestampToMatch} /= {SeqMessage, lpSenderMessage, lpReceiverMessage, 
-			PayloadMessage, TimestampMessage} ->	true
-		end
-	end.
-
-%% unit testing
-weak_not_match_pred_1_test() -> false = (list_utils:weak_not_match_pred(#message{type=event, seqNumber=1, lpSender=1, lpReceiver=2, payload=3, timestamp=20}))
-							  (#message{type=ack, seqNumber=1, lpSender=1, lpReceiver=2, payload=3, timestamp=20}).
-weak_not_match_pred_2_test() -> true = (list_utils:weak_not_match_pred(#message{type=event, seqNumber=1, lpSender=1, lpReceiver=2, payload=3, timestamp=20}))
-							  (#message{type=ack, seqNumber=12, lpSender=1, lpReceiver=2, payload=3, timestamp=20}). 
 
 
 

@@ -11,6 +11,20 @@ multi_safe_insert([], Tree) -> Tree;
 multi_safe_insert([Element|Tail], Tree) ->
 	multi_safe_insert(Tail, safe_insert(Element,Tree)).
 
+
+multi_safe_insert_test() ->
+	Event1 = #message{type=event, seqNumber=1, lpSender=1, lpReceiver=2, payload=3, timestamp=100},
+	Event2 = #message{type=event, seqNumber=1, lpSender=1, lpReceiver=2, payload=3, timestamp=20},
+	Event3 = #message{type=event, seqNumber=1, lpSender=1, lpReceiver=2, payload=3, timestamp=330},
+	Tree1 = safe_insert(Event1, safe_insert(Event2, safe_insert(Event3, gb_trees:empty()))),
+	Tree2 = multi_safe_insert([Event1, Event2, Event3], gb_trees:empty()),
+	{Key, FirstTree1} = gb_trees:smallest(Tree1),
+	{Key, FirstTree2} = gb_trees:smallest(Tree2),
+	SizeTree1 = gb_trees:size(Tree1),
+	SizeTree2 = gb_trees:size(Tree2),
+	SizeTree1 = SizeTree2,
+	FirstTree1 = FirstTree2.
+
 safe_insert(Element, Tree) ->
 	Result = gb_trees:is_defined(Element#message.timestamp, Tree),
 	Key = Element#message.timestamp,

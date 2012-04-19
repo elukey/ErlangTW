@@ -27,10 +27,11 @@ dequeue_history_until_test() ->
 	Queue = queue:from_list([{not_imp, not_imp, #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=1}},
 	 {not_imp, not_imp, #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2}},
 	 {not_imp, not_imp, #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=3}}]),
+	
 	Message = #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2},
-	Result = queue:from_list([{not_imp, not_imp, #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=1}},
-	 {not_imp, not_imp, #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2}}]),
-	Result = dequeue_history_until(Queue, Message).
+	NewQueue = queue:from_list([{not_imp, not_imp, #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=1}}]),
+	ElementToRestore = {not_imp, not_imp, #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2}},
+	{ElementToRestore, NewQueue} = dequeue_history_until(Queue, Message).
 	
 dequeue_until(Queue, Timestamp) ->
 	dequeue_until_aux(Queue, Timestamp, []).
@@ -53,8 +54,9 @@ dequeue_until_test() ->
 	Queue = queue:from_list([#message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=1},
 	 #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2},
 	 #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=3}]),
-	QueueResult = queue:from_list([#message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=1}]),
-	{QueueResult, [#message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2},
+	QueueResult = queue:new(),
+	{QueueResult, [#message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=1},
+				   #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2},
 	 #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=3}]} = 
 		dequeue_until(Queue, 1).
 

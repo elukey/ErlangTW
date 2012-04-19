@@ -133,6 +133,7 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 							if 
 								ProcResult == true ->
 									LpAfterRollback = rollback(Message#message.timestamp, LpAfterSend),
+									io:format("\n~w rollbacks because of ~w", [self(), Message]),
 									process_received_messages(
 									  LpAfterRollback#lp_status{inbox_messages=tree_utils:delete(Message#message{type=event}, LpAfterRollback#lp_status.inbox_messages), 
 																received_messages=RemainingQueue}, MaxMessageToProcess-1);
@@ -261,6 +262,7 @@ rollback(StragglerTimestamp, Lp) ->
 	RollBacks = Lp#lp_status.rollbacks + 1,
 	% bring the processed events back in the inbox queue
 	{NewProcQueue, ToReProcessMsgs} = queue_utils:dequeue_until(Lp#lp_status.proc_messages, StragglerTimestamp),
+	io:format("\nRE-Processing ~w", [ToReProcessMsgs]),
 	NewInboxQueue = tree_utils:multi_safe_insert(ToReProcessMsgs, Lp#lp_status.inbox_messages),
 	% prepare the set of antimessages to send looking into the sent queue
 	NewQueueSentMessages = [MessageSent ||  MessageSent <- Lp#lp_status.sent_messages, MessageSent#message.timestamp < StragglerTimestamp],
