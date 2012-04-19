@@ -58,7 +58,7 @@ process_top_message(Lp) ->
 	if 
 		(IsInboxEmpty == false) and ((Lp#lp_status.status == running) or (Lp#lp_status.status == prepare_to_terminate)) -> 
 			{InboxMinEvent, RestOfInbox} = tree_utils:retrieve_min(Lp#lp_status.inbox_messages),
-			History = {Lp#lp_status.timestamp, Lp#lp_status.model_state, InboxMinEvent},
+			History = {InboxMinEvent#message.timestamp, Lp#lp_status.model_state, InboxMinEvent},
 			NewLp = user:lp_function(InboxMinEvent, Lp#lp_status{timestamp=InboxMinEvent#message.timestamp}),
 			NewLp#lp_status{inbox_messages=RestOfInbox, proc_messages=queue:in(InboxMinEvent, NewLp#lp_status.proc_messages),
 							   history = queue:in(History, NewLp#lp_status.history), timestamp=InboxMinEvent#message.timestamp};
@@ -110,7 +110,8 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 								ProcResult == true ->
 									LpAfterRollback = rollback(Message#message.timestamp, LpAfterSend),
 									%io:format("\nAnnhilated! ~w", [Message]),
-									process_received_messages(LpAfterRollback#lp_status{proc_messages=annihilate_antimsg(LpAfterSend#lp_status.proc_messages, Message)}, MaxMessageToProcess-1);
+									process_received_messages(
+									  LpAfterRollback#lp_status{inbox_messages=tree_utils:delete(Message#message{type=event}, LpAfterRollback#lp_status.inbox_messages)}, MaxMessageToProcess-1);
 								ProcResult == false -> 
 									process_received_messages(LpAfterSend#lp_status{anti_messages=queue:in(Message, LpAfterSend#lp_status.anti_messages)}, MaxMessageToProcess-1)
 							end;
@@ -276,12 +277,13 @@ rollback(StragglerTimestamp, Lp) ->
 	IsNewProcQueueEmpty = queue:is_empty(NewProcQueue),
 	if 
 		IsNewProcQueueEmpty == true -> 
+			io:format("\nAAAAAAAA"),
 			NewLp = (init_state_vars(Lp))#lp_status{inbox_messages=NewInboxQueue, rollbacks=RollBacks, proc_messages=NewProcQueue, 
 												  sent_messages=NewQueueSentMessages};
 		IsNewProcQueueEmpty == false ->
 			if 
 				ToReProcessMsgs /= [] ->
-					[Head|_] = ToReProcessMsgs, 
+					[Head|_] = ToReProcessMsgs,
 					NewLp = restore_history(Head, Lp#lp_status{inbox_messages=NewInboxQueue, rollbacks=RollBacks, proc_messages=NewProcQueue, 
 													sent_messages=NewQueueSentMessages});
 				ToReProcessMsgs == [] ->

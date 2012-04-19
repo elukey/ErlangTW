@@ -12,16 +12,20 @@ start_function(Lp) ->
 	FirstEntity = get_first_entity_index(LpId, EntitiesNum, LpsNum),
 	LastEntity = get_last_entity_index(LpId, EntitiesNum, LpsNum), 
 	io:format("\nI am ~w and my first entity is ~w and last is ~w", [self(), FirstEntity, LastEntity]),
-	NewLp = generate_events(StartModel#state.starting_events, Lp, FirstEntity, LastEntity),
-	NewLp#lp_status{init_model_state=NewLp#lp_status.model_state}.
+	ModelWithEntitiesStates = StartModel#state{entities_state=generate_init_entities_states(FirstEntity, LastEntity)},
+	NewLp = generate_events(StartModel#state.starting_events, 
+							Lp#lp_status{model_state=ModelWithEntitiesStates}, FirstEntity, LastEntity),
+	NewLp#lp_status{init_model_state=ModelWithEntitiesStates}.
+
+generate_init_entities_states(FirstEntity, LastEntity) ->
+	InitEntitiesStates = [{Entity, #entity_state{seed=Entity, timestamp=0}} || Entity <- lists:seq(FirstEntity, LastEntity)],
+	dict:from_list(InitEntitiesStates).
 
 generate_events(_, Lp, FirstEntity, LastEntity) when FirstEntity -1 == LastEntity -> Lp;
 generate_events(Number, Lp, FirstEntity, LastEntity) ->
 	generate_events(Number, generate_starting_events(Lp, LastEntity, Number), FirstEntity, LastEntity-1).
 	
-generate_starting_events(Lp, Entity, Number) when Number == 0 -> 
-	ModelState = get_modelstate(Lp),
-	set_modelstate(Lp, ModelState#state{entities_state=dict:store(Entity, 0, ModelState#state.entities_state)});
+generate_starting_events(Lp, _, Number) when Number == 0 -> Lp;
 generate_starting_events(Lp, Entity, Number) ->
 	ModelState = get_modelstate(Lp),
 	{Event, NewModelState} = generate_event_from_sender(Entity, 0, 0, ModelState),
@@ -34,22 +38,27 @@ lp_function(Event, Lp) ->
 	#payload{entityReceiver=EntityReceiver} = Event#message.payload,
 	ModelState = get_modelstate(Lp),
 	MaxTimestap = ModelState#state.max_timestamp,
-	EntityReceiverTimestamp = dict:fetch(EntityReceiver, ModelState#state.entities_state),
+	EntityState = get_entity_state(EntityReceiver, ModelState),
 	if
-		Event#message.timestamp < EntityReceiverTimestamp ->
-			io:format("\n\n~w Entity timestamp ~w message timestamp ~w LP timestamp ~w\n", [self(), EntityReceiverTimestamp, Event#message.timestamp, Lp#lp_status.timestamp]),
-			erlang:error("Timestamp less than expected!");
-		Event#message.timestamp >= EntityReceiverTimestamp -> ok
+		EntityReceiver == 5 ->
+			io:format("\n\n Entity 5 timestamp ~w seed ~w event timestamp ~w", [EntityState#entity_state.timestamp, EntityState#entity_state.seed, Event#message.timestamp]);
+		EntityReceiver /= 5 ->
+			ok
 	end,
-	%io:format("\nEntity ~w with timestamp ~w", [EntityReceiver, dict:find(EntityReceiver, ModelState#state.entities_state)]),
 	if
-		EntityReceiverTimestamp >= MaxTimestap ->
-			Lp;
-		EntityReceiverTimestamp < MaxTimestap ->
-			NewModelState = ModelState#state{entities_state=dict:store(EntityReceiver, Event#message.timestamp, ModelState#state.entities_state)},
-			{NewEvent, NewModelState2} = generate_event_from_sender(EntityReceiver, Event#message.timestamp, 1, NewModelState),
-			#message{lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp} = NewEvent, 
-			lp:send_event(LPSender, LPReceiver, Payload, Timestamp, Lp#lp_status{model_state=NewModelState2})
+		Event#message.timestamp < EntityState#entity_state.timestamp ->
+			io:format("\n\n~w Entity timestamp ~w message timestamp ~w LP timestamp ~w\n", [self(), EntityState#entity_state.timestamp, Event#message.timestamp, Lp#lp_status.timestamp]),
+			erlang:error("Timestamp less than expected!");
+		Event#message.timestamp >= EntityState#entity_state.timestamp -> 
+			if
+				EntityState#entity_state.timestamp >= MaxTimestap -> Lp;
+				EntityState#entity_state.timestamp < MaxTimestap ->
+					NewEntityState = EntityState#entity_state{timestamp=Event#message.timestamp},
+					NewModelState = ModelState#state{entities_state=set_entity_state(EntityReceiver, NewEntityState, ModelState)},
+					{NewEvent, NewModelState2} = generate_event_from_sender(EntityReceiver, Event#message.timestamp, 1, NewModelState),
+					#message{lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp} = NewEvent, 
+					lp:send_event(LPSender, LPReceiver, Payload, Timestamp, Lp#lp_status{model_state=NewModelState2})
+			end
 	end.
 
 terminate_model(Lp) ->
@@ -57,23 +66,24 @@ terminate_model(Lp) ->
 	io:format("\n~w Entities: ~w", [self(),ModelState#state.entities_state]),
 	io:format("\nTotal message in inbox: ~w", [Lp#lp_status.inbox_messages]).
 
-generate_event_from_receiver(EntityReceiver, Timestamp, PayloadValue, ModelState) ->
-	{ExpDeltaTime, NewSeed} =  lcg:get_exponential_random(ModelState#state.seed),
-	NewTimestamp = Timestamp + ExpDeltaTime,
-	{EntitySender, NewSeed2} = lcg:get_random(NewSeed, 1, ModelState#state.entities),
-	LpReceiver = which_lp_controls(EntitySender, ModelState#state.entities, ModelState#state.lps),
-	Payload = #payload{entitySender=EntitySender, entityReceiver=EntityReceiver, value=PayloadValue},
-	Event = #message{type=event, lpSender=self(), lpReceiver=LpReceiver, payload=Payload, seqNumber=0, timestamp=NewTimestamp},
-	{Event, ModelState#state{seed=NewSeed2}}.
+
+get_entity_state(Entity, ModelState) ->
+	dict:fetch(Entity, ModelState#state.entities_state).
+
+set_entity_state(Entity,State,ModelState) ->
+	dict:store(Entity, State, ModelState#state.entities_state).
 
 generate_event_from_sender(EntitySender, Timestamp, PayloadValue, ModelState) ->
-	{ExpDeltaTime, NewSeed} =  lcg:get_exponential_random(ModelState#state.seed),
+	EntityState = get_entity_state(EntitySender, ModelState),
+	{ExpDeltaTime, NewSeed} =  lcg:get_exponential_random(EntityState#entity_state.seed),
 	NewTimestamp = Timestamp + ExpDeltaTime,
 	{EntityReceiver, NewSeed2} = lcg:get_random(NewSeed, 1, ModelState#state.entities),
 	LpReceiver = which_lp_controls(EntityReceiver, ModelState#state.entities, ModelState#state.lps),
 	Payload = #payload{entitySender=EntitySender, entityReceiver=EntityReceiver, value=PayloadValue},
 	Event = #message{type=event, lpSender=self(), lpReceiver=LpReceiver, payload=Payload, seqNumber=0, timestamp=NewTimestamp},
-	{Event, ModelState#state{seed=NewSeed2}}.
+	NewEntityState = EntityState#entity_state{seed=NewSeed2},
+	NewModelState = ModelState#state{entities_state=set_entity_state(EntitySender, NewEntityState, ModelState)},
+	{Event, NewModelState}.
 
 newton_radix(Number, FPOp) ->
 	newton_radix_aux(Number, trunc(FPOp/5), 1, 0.5).

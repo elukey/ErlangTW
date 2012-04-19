@@ -27,7 +27,7 @@ retrieve_min(Tree) ->
 	if 
 		IsTreeEmpty == true -> nothing;
 		IsTreeEmpty == false ->
-			{_, Val, NewTree} = gb_trees:take_smallest(Tree),
+			{Timestamp, Val, NewTree} = gb_trees:take_smallest(Tree),
 			ValLength = length(Val),
 			if 
 				ValLength == 1 ->
@@ -35,7 +35,7 @@ retrieve_min(Tree) ->
 					{Element, NewTree};
 				ValLength > 1 ->
 					[Element | TailElements] = Val,
-					LastTree = multi_safe_insert(TailElements, NewTree),
+					LastTree = gb_trees:insert(Timestamp, TailElements, NewTree),
 					{Element, LastTree}
 			end
 	end.
@@ -56,14 +56,14 @@ is_enqueued(Element, Tree) ->
 delete(Element, Tree) ->
 	Result = gb_trees:lookup(Element#message.timestamp, Tree),
 	if 
-		Result == none -> Tree;
+		Result == none -> io:format("\nElement to delete not found\n"), Tree;
 		Result /= none ->
 			{value, ListOfEvents} = Result,
-			NewListOfEvents = [Event || Event <- ListOfEvents, Element /= Event],
+			NewListOfEvents = [Event || Event <- ListOfEvents, Event /= Element],
 			if 
-				NewListOfEvents == [] -> gb_trees:delete(Element#message.timestamp, Tree);
-				NewListOfEvents /= [] ->
-					gb_trees:update(Element#message.timestamp, NewListOfEvents, Tree)
+				length(NewListOfEvents) == length(ListOfEvents) -> io:format("\nElement to delete not found\n"), Tree;
+				length(NewListOfEvents) == 0 -> gb_trees:delete(Element#message.timestamp, Tree);
+				length(NewListOfEvents) /= length(ListOfEvents) -> gb_trees:update(Element#message.timestamp, NewListOfEvents, Tree)
 			end
 	end.		
 					
