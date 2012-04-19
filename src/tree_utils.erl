@@ -18,9 +18,16 @@ safe_insert(Element, Tree) ->
 		Result == false -> gb_trees:insert(Key, [Element], Tree);
 		Result == true -> 
 			{value, Val} = gb_trees:lookup(Key, Tree),
-			gb_trees:update(Key, Val ++ [Element], Tree)
+			gb_trees:update(Key, sort_events([Element| Val]), Tree)
 	end.
 		
+
+sort_events(ListUnsorted) ->
+	lists:sort(fun(Event1, Event2) -> 
+					   if Event1#message.seqNumber =< Event2#message.seqNumber -> true;
+						  Event1#message.seqNumber > Event2#message.seqNumber -> false
+						end
+			   end, ListUnsorted).
 
 retrieve_min(Tree) ->
 	IsTreeEmpty = gb_trees:is_empty(Tree),

@@ -41,7 +41,7 @@ lp_function(Event, Lp) ->
 	EntityState = get_entity_state(EntityReceiver, ModelState),
 	if
 		EntityReceiver == 5 ->
-			io:format("\n\n Entity 5 timestamp ~w seed ~w event timestamp ~w", [EntityState#entity_state.timestamp, EntityState#entity_state.seed, Event#message.timestamp]);
+			io:format("\n\n Entity 5 timestamp ~w seed ~w event timestamp ~w payload ~w", [EntityState#entity_state.timestamp, EntityState#entity_state.seed, Event#message.timestamp, Event#message.payload]);
 		EntityReceiver /= 5 ->
 			ok
 	end,
