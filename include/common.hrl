@@ -7,6 +7,7 @@
 					sent_messages, 
 					to_ack_messages, 
 					anti_messages, 
+					current_event,
 					history, gvt, 
 					rollbacks, timestamp,
 					model_state, 
@@ -14,3 +15,4 @@
 					samadi_find_mode, 
 					samadi_marked_messages_min, 
 					messageSeqNumber, status}).
+-record(sent_msgs, {event, msgs_list}).

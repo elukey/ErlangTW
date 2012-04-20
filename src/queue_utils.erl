@@ -33,20 +33,40 @@ dequeue_history_until_test() ->
 	ElementToRestore = {not_imp, not_imp, #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2}},
 	{ElementToRestore, NewQueue} = dequeue_history_until(Queue, Message).
 	
-dequeue_until(Queue, Timestamp) ->
-	dequeue_until_aux(Queue, Timestamp, []).
+dequeue_until(Message, Queue) ->
+	if 
+		Message#message.type == event ->
+			dequeue_until_timestamp(Queue, Message#message.timestamp, []);
+		Message#message.type == antimessage ->
+			dequeue_until_event(Queue, Message#message{type=event}, [])
+	end.
 
-dequeue_until_aux(Queue, Timestamp, Acc) ->	
+dequeue_until_event(Queue, EventToMatch, Acc) ->	
 	Guard = queue:is_empty(Queue),
 	if
 		Guard == true -> {Queue, Acc};
 		Guard == false ->
-			Item = queue:get_r(Queue),
+			{{value, ItemDequeued}, NewQueue} = queue:out_r(Queue),
+			#sent_msgs{event=Event} = ItemDequeued,
 			if
-				Item#message.timestamp >= Timestamp -> 
+				Event /= EventToMatch -> 
+					 dequeue_until_event(NewQueue, EventToMatch, [ItemDequeued] ++ Acc);
+				Event == EventToMatch -> {Queue, Acc}
+			end
+	end.
+
+
+dequeue_until_timestamp(Queue, Timestamp, Acc) ->	
+	Guard = queue:is_empty(Queue),
+	if
+		Guard == true -> {Queue, Acc};
+		Guard == false ->
+			#sent_msgs{event=Event} = queue:get_r(Queue),
+			if
+				Event#message.timestamp >= Timestamp -> 
 					 {{value, ItemDequeued}, NewQueue} = queue:out_r(Queue),
-					 dequeue_until_aux(NewQueue, Timestamp, [ItemDequeued] ++ Acc);
-				Item#message.timestamp < Timestamp -> {Queue, Acc}
+					 dequeue_until_timestamp(NewQueue, Timestamp, [ItemDequeued] ++ Acc);
+				Event#message.timestamp < Timestamp -> {Queue, Acc}
 			end
 	end.
 
