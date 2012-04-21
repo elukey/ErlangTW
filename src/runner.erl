@@ -1,34 +1,33 @@
 -module(runner).
 
--export([main/3, distributed_main/2, create_LPs/3, stop_vms/1]).
+-export([main/4, create_LPs/3, stop_vms/1]).
 -include("user_include.hrl").
 -include("common.hrl").
 
-main(LPNum, EntitiesNum, MaxTimestamp) -> 
+main(LPNum, EntitiesNum, MaxTimestamp, Topology) ->
+	StartTimestamp = erlang:now(),
 	Density = 0.5, 
 	InitModelState = #state{value=1, seed=LPNum, density=Density, lps=LPNum, 
 							starting_events=10, entities=EntitiesNum, entities_state=dict:new(),
 							max_timestamp=MaxTimestamp},
-	create_LPs(1, LPNum, InitModelState),
-	io:format("~nThreads spawned~n"),
-	start(LPNum),
-	io:format("~nThreads started~n"),
-	gvt:gvt_controller(LPNum, MaxTimestamp).
-
-
-distributed_main(LPNum, MaxTimestamp) ->
-	InitModelState = #state{value=1, seed=LPNum, density=0.5, lps=LPNum, starting_events=1},
-	ConnectedErlangVM = net_adm:world(),
-	LenConnectedErlangVM = length(ConnectedErlangVM),
-	if 
-		LenConnectedErlangVM >= 1 -> ok;
-		LenConnectedErlangVM == 0 -> erlang:exit("Some problems during the connection with the other erlang vms, please check.")
+	if
+		Topology == sequential ->
+			create_LPs(1, LPNum, InitModelState);
+		Topology == distributed ->
+			ConnectedErlangVM = net_adm:world(),
+			LenConnectedErlangVM = length(ConnectedErlangVM),
+			if 
+				LenConnectedErlangVM >= 1 -> ok;
+				LenConnectedErlangVM == 0 -> erlang:exit("Some problems during the connection with the other erlang vms, please check.")
+			end,
+			io:format("\nConnected with the following nodes: ~w\n", [ConnectedErlangVM]),
+			call_vms(ConnectedErlangVM, LenConnectedErlangVM, LPNum, LenConnectedErlangVM, InitModelState),
+			global:sync()
 	end,
-	io:format("\nConnected with the following nodes: ~w\n", [ConnectedErlangVM]),
-	call_vms(ConnectedErlangVM, LenConnectedErlangVM, LPNum, LenConnectedErlangVM, InitModelState),
-	global:sync(),
 	start(LPNum),
-	gvt:gvt_controller(LPNum, MaxTimestamp).
+	gvt:gvt_controller(LPNum, MaxTimestamp),
+	EndTimestamp = erlang:now(),
+	io:format("\nTime taken: ~w", [timer:now_diff(EndTimestamp, StartTimestamp)/1000000]).
 
 
 stop_vms([]) -> ok;

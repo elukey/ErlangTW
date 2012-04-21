@@ -1,0 +1,20 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! erl -sname controller -pa ebin/
+main([LpsNum, EntitiesNum, MaxTS]) ->
+    try
+    	LPs = list_to_integer(LpsNum),
+	Entities = list_to_integer(EntitiesNum),
+    	MaxTimestamp = list_to_integer(MaxTS),
+        runner:main(LPs,Entities,MaxTimestamp,sequential)
+    catch
+        _:_ ->
+            usage()
+    end;
+main(_) ->
+    usage().
+
+usage() ->
+    io:format("usage: starter #lps #entities max_timestamp\n"),
+    halt(1).
+

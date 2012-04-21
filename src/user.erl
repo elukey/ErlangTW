@@ -39,12 +39,15 @@ lp_function(Event, Lp) ->
 	ModelState = get_modelstate(Lp),
 	MaxTimestap = ModelState#state.max_timestamp,
 	EntityState = get_entity_state(EntityReceiver, ModelState),
-	if
-		EntityReceiver == 5 ->
-			io:format("\n\n Entity 5 timestamp ~w seed ~w event timestamp ~w payload ~w", [EntityState#entity_state.timestamp, EntityState#entity_state.seed, Event#message.timestamp, Event#message.payload]);
-		EntityReceiver /= 5 ->
-			ok
-	end,
+	% coherence check, testing code
+	%if
+	%	EntityReceiver == 5 ->
+	%		{ok, WriteDescr} = file:open("/home/luke/Desktop/trace5.txt", [append]), 
+	%		io:format(WriteDescr,"\nEntity ~w with timestamp ~w received payload ~w", [EntityReceiver, EntityState#entity_state.timestamp, Event#message.payload]), 
+	%		file:close(WriteDescr);
+	%	EntityReceiver /= 5 ->
+	%		ok
+	%end,
 	if
 		Event#message.timestamp < EntityState#entity_state.timestamp ->
 			io:format("\n\n~w Entity timestamp ~w message timestamp ~w LP timestamp ~w\n", [self(), EntityState#entity_state.timestamp, Event#message.timestamp, Lp#lp_status.timestamp]),
@@ -63,8 +66,10 @@ lp_function(Event, Lp) ->
 
 terminate_model(Lp) ->
 	ModelState = get_modelstate(Lp),
-	io:format("\n~w Entities: ~w", [self(),ModelState#state.entities_state]),
-	io:format("\nTotal message in inbox: ~w", [Lp#lp_status.inbox_messages]).
+	pretty_print_model_entities(ModelState).
+
+pretty_print_model_entities(ModelState) ->
+	lists:foreach(fun(X) -> {Entity, EntityState} = X, io:format("\nEntity ~w with timestamp ~w\n", [Entity, EntityState#entity_state.timestamp]) end, dict:to_list(ModelState#state.entities_state)).
 
 
 get_entity_state(Entity, ModelState) ->

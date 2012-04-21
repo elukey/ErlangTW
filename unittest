@@ -1,0 +1,17 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! erl -sname controller -pa ebin/
+main([]) ->
+    try
+    	unit_test:all_test()
+    catch
+        _:_ ->
+            usage()
+    end;
+main(_) ->
+    usage().
+
+usage() ->
+    io:format("usage: unittest \n"),
+    halt(1).
+

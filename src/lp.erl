@@ -43,9 +43,12 @@ main_loop(Lp) ->
 				main_loop(process_top_message(process_received_messages(Lp, Lp#lp_status.max_received_messages)))
 			end;
 
-		Lp#lp_status.status == terminated -> user:terminate_model(Lp)
+		Lp#lp_status.status == terminated -> user:terminate_model(Lp), print_lp_info(Lp)
 	end.
 	
+
+print_lp_info(Lp) ->
+	io:format("\n LP ~w rollbacks ~w", [self(), Lp#lp_status.rollbacks]).
 
 
 %
@@ -65,6 +68,7 @@ process_top_message(Lp) ->
 																 current_event=InboxMinEvent, proc_messages=queue:in(CurrentEventDep, Lp#lp_status.proc_messages),
 									 							 history = queue:in(History, Lp#lp_status.history)}),
 			NewLp#lp_status{inbox_messages=RestOfInbox};
+
 		
 		(IsInboxEmpty == true) and (Lp#lp_status.status == prepare_to_terminate) -> 
 			receive 
@@ -116,7 +120,6 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 									process_received_messages(LpAfterAck#lp_status{received_messages=RemainingQueue, 
 																						inbox_messages=tree_utils:safe_insert(Message,  LpAfterAck#lp_status.inbox_messages)}, MaxMessageToProcess-1);
 								Result == false -> 
-									io:format("\n~w rollbacks because of ~w", [self(), Message]),
 									LpAfterRollback = rollback(Message, LpAfterAck#lp_status{received_messages=RemainingQueue}),
 									process_received_messages(LpAfterRollback#lp_status{inbox_messages=tree_utils:safe_insert(Message, LpAfterRollback#lp_status.inbox_messages)}, MaxMessageToProcess-1)
 							end;
@@ -136,7 +139,6 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 							if 
 								ProcResult == true ->
 									LpAfterRollback = rollback(Message, LpAfterSend),
-									io:format("\n~w rollbacks because of ~w", [self(), Message]),
 									process_received_messages(
 									  LpAfterRollback#lp_status{inbox_messages=tree_utils:delete(Message#message{type=event}, LpAfterRollback#lp_status.inbox_messages), 
 																received_messages=RemainingQueue}, MaxMessageToProcess-1);
@@ -224,7 +226,6 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 				{prepare_to_terminate, ControllerPid} ->
 					io:format("\n~w has finished, timestamp ~w\n", [self(), Lp#lp_status.timestamp]),
 					ControllerPid ! {ack},
-					user:terminate_model(Lp),
 					process_received_messages(Lp#lp_status{status=prepare_to_terminate, received_messages=queue:new()}, MaxMessageToProcess-1)
 
 			end
@@ -258,9 +259,14 @@ compute_local_minimum(InboxHeadEventTimestamp, ToAckHeadEventTimestamp, MarkedMi
 handle_processed_events([], Lp) -> Lp;
 handle_processed_events([Head|Tail], Lp) ->
 	#sent_msgs{event=Event, msgs_list=EventDependencies} = Head,
-	NewInbox = tree_utils:safe_insert(Event, Lp#lp_status.inbox_messages),
-	NewLp = send_antimessages(EventDependencies, Lp#lp_status{inbox_messages=NewInbox}),
-	handle_processed_events(Tail, NewLp).
+	if 
+		Event /= nil ->
+			NewInbox = tree_utils:safe_insert(Event, Lp#lp_status.inbox_messages),
+			NewLp = send_antimessages(EventDependencies, Lp#lp_status{inbox_messages=NewInbox}),
+			handle_processed_events(Tail, NewLp);
+		Event == nil ->
+			send_antimessages(EventDependencies, Lp)
+	end.
 
 %
 % Performs the rollback in case of a straggler message arrives 
@@ -270,8 +276,7 @@ handle_processed_events([Head|Tail], Lp) ->
 %
 rollback(StragglerMessage, Lp) ->
 	RollBacks = Lp#lp_status.rollbacks + 1,
-	StragglerTimestamp = StragglerMessage#message.timestamp,
-	io:format("\n~w rollbacks to ~w, now it's ~w", [self(), StragglerTimestamp, Lp#lp_status.timestamp]),
+	%io:format("\n~w rollbacks to ~w because ~w, now it's ~w", [self(), StragglerMessage#message.timestamp, StragglerMessage, Lp#lp_status.timestamp]),
 	% bring the processed events back in the inbox queue
 	{NewProcQueue, ToReProcessMsgs} = queue_utils:dequeue_until(StragglerMessage, Lp#lp_status.proc_messages),
 	%io:format("\nRE-Processing ~w", [ToReProcessMsgs]),
@@ -287,7 +292,7 @@ rollback(StragglerMessage, Lp) ->
 					[Head|_] = ToReProcessMsgs,
 					restore_history(Head#sent_msgs.event, NewLp);
 				ToReProcessMsgs == [] ->
-					io:format("\nNessun evento da riprocessare, rollback to ~w ts lp ~w proc messages ~w", [StragglerTimestamp, Lp#lp_status.timestamp, queue:get_r(Lp#lp_status.proc_messages)]),
+					io:format("\nNo event to reprocess during rollback"),
 					NewLp
 			end
 	end.
