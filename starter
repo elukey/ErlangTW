@@ -8,9 +8,9 @@ main([LpsNum, EntitiesNum, MaxTS]) ->
     	MaxTimestamp = list_to_integer(MaxTS),
         runner:main(LPs,Entities,MaxTimestamp,sequential)
     catch
-        _:_ ->
-            usage()
+    	TypeOfError:ErrorValue -> io:format("\n\nException ~w with value: ~w", [TypeOfError ,ErrorValue])    	
     end;
+
 main(_) ->
     usage().
 

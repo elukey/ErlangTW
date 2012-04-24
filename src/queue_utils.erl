@@ -73,28 +73,6 @@ dequeue_until_timestamp(Queue, Timestamp, Acc) ->
 			end
 	end.
 
-dequeue_until_test() ->
-	Queue = queue:from_list([#message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=1},
-	 #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2},
-	 #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=3}]),
-	QueueResult = queue:new(),
-	{QueueResult, [#message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=1},
-				   #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2},
-	 #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=3}]} = 
-		dequeue_until(Queue, 1).
-
-dequeue_until_2_test() ->
-	Queue = queue:from_list([#message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2},
-	 #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=3}]),
-	QueueResult = queue:new(),
-	{QueueResult, [#message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2},
-	 #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=3}]} = dequeue_until(Queue, 1).
-
-dequeue_until_3_test() ->
-	Queue = queue:from_list([#message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2},
-	 #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=3}]),
-	{Queue, []} = dequeue_until(Queue, 4).
-
 
 
 delete_element(Queue, Element) ->

@@ -1,5 +1,5 @@
 -module(user).
--export([lp_function/2, start_function/1, newton_radix/2, get_pid/1, terminate_model/1]).
+-export([lp_function/2, start_function/1, newton_radix/2, get_pid/1, terminate_model/1, newton_radix_foldl/2]).
 
 -include("user_include.hrl").
 -include("common.hrl").
@@ -40,14 +40,14 @@ lp_function(Event, Lp) ->
 	MaxTimestap = ModelState#state.max_timestamp,
 	EntityState = get_entity_state(EntityReceiver, ModelState),
 	% coherence check, testing code
-	%if
-	%	EntityReceiver == 5 ->
-	%		{ok, WriteDescr} = file:open("/home/luke/Desktop/trace5.txt", [append]), 
-	%		io:format(WriteDescr,"\nEntity ~w with timestamp ~w received payload ~w", [EntityReceiver, EntityState#entity_state.timestamp, Event#message.payload]), 
-	%		file:close(WriteDescr);
-	%	EntityReceiver /= 5 ->
-	%		ok
-	%end,
+	if
+		EntityReceiver == 5 ->
+			{ok, WriteDescr} = file:open("/home/luke/Desktop/trace5.txt", [append]), 
+			io:format(WriteDescr,"\nEntity ~w with timestamp ~w received payload ~w", [EntityReceiver, EntityState#entity_state.timestamp, Event#message.payload]), 
+			file:close(WriteDescr);
+		EntityReceiver /= 5 ->
+			ok
+	end,
 	if
 		Event#message.timestamp < EntityState#entity_state.timestamp ->
 			io:format("\n\n~w Entity timestamp ~w message timestamp ~w LP timestamp ~w\n", [self(), EntityState#entity_state.timestamp, Event#message.timestamp, Lp#lp_status.timestamp]),
@@ -90,6 +90,19 @@ generate_event_from_sender(EntitySender, Timestamp, PayloadValue, ModelState) ->
 	NewModelState = ModelState#state{entities_state=set_entity_state(EntitySender, NewEntityState, ModelState)},
 	{Event, NewModelState}.
 
+%% 
+%% Newton's radix function implemented using the foldl bif
+%% Note: worst performances respect the newton_radix method 
+%%
+newton_radix_foldl(Number, FPOp) ->
+	TotalIterations = trunc(FPOp/5),
+	Result = lists:foldl(fun(_, Acc) -> 0.5 * Acc * (3 - (Number * Acc * Acc)) end , 0.5, lists:seq(1, TotalIterations)),
+	1/Result.
+
+
+%%
+%% Newton's radix function implementation
+%%
 newton_radix(Number, FPOp) ->
 	newton_radix_aux(Number, trunc(FPOp/5), 1, 0.5).
 
@@ -101,12 +114,10 @@ newton_radix_aux(Number, TotalIteration, CurrentIterationNum, Acc) ->
 get_modelstate(Lp) ->
 	Lp#lp_status.model_state.
 
-set_modelstate(Lp, ModelState) ->
-	Lp#lp_status{model_state=ModelState}.
-
 
 get_pid(LP) ->
-	Pid = global:whereis_name(list_to_atom(string:concat("lp_",integer_to_list(LP)))),
+	LPString = "lp_" ++ integer_to_list(LP),
+	Pid = global:whereis_name(list_to_existing_atom(LPString)),
 	if
 		Pid == undefined -> erlang:error("The pid returned for the LP is undefined!\n", [LP,global:registered_names()]);
 		Pid /= undefined -> Pid

@@ -26,12 +26,13 @@ multi_safe_insert_test() ->
 	FirstTree1 = FirstTree2.
 
 safe_insert(Element, Tree) ->
-	Result = gb_trees:is_defined(Element#message.timestamp, Tree),
+	%Result = gb_trees:is_defined(Element#message.timestamp, Tree),
 	Key = Element#message.timestamp,
+	Result = gb_trees:lookup(Key, Tree),
 	if
-		Result == false -> gb_trees:insert(Key, [Element], Tree);
-		Result == true -> 
-			{value, Val} = gb_trees:lookup(Key, Tree),
+		Result == none -> gb_trees:insert(Key, [Element], Tree);
+		Result /= none -> 
+			{value, Val} = Result,
 			gb_trees:update(Key, sort_events([Element| Val]), Tree)
 	end.
 		

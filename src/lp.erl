@@ -1,5 +1,5 @@
 -module(lp).
--export([start/2, send_event/5]).
+-export([start/2, send_event/5, compute_local_minimum/6]).
 
 -include("user_include.hrl").
 -include("common.hrl").
@@ -23,7 +23,7 @@ start(MyLPNumber, InitModelState) ->
 		rollbacks=0,
 		timestamp=0,
 		status=running,
-		max_received_messages=100,
+		max_received_messages=10,
 		samadi_find_mode=false,
 		samadi_marked_messages_min=0,
 		messageSeqNumber=0}, 
@@ -51,12 +51,10 @@ print_lp_info(Lp) ->
 	io:format("\n LP ~w rollbacks ~w", [self(), Lp#lp_status.rollbacks]).
 
 
-%
-% Process the fist message in the inbox_messages priority queue
-% It is responsible to call the user function
-% @param Lp: the Lp status record
-% @return the modified Lp status record
-%
+%%
+%% Process the fist message in the inbox_messages priority queue,
+%% it is also responsible to call the user model's function
+%%
 process_top_message(Lp) ->
 	IsInboxEmpty = gb_trees:is_empty(Lp#lp_status.inbox_messages),
 	if 
@@ -201,9 +199,7 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 						ToAckHeadEvent /= [] -> ToAckHeadEventTimestamp = ToAckHeadEvent#message.timestamp
 					end,
 					MarkedMinTimestamp = Lp#lp_status.samadi_marked_messages_min,
-					LocalMin = compute_local_minimum(InboxHeadEventTimestamp, ToAckHeadEventTimestamp, MarkedMinTimestamp, Lp#lp_status.timestamp),
-					MasterPid ! {my_local_min, self(), LocalMin},
-					io:format("\n~w with timestamp ~w LOCALMIN ~w", [self(), Lp#lp_status.timestamp, LocalMin]),
+					spawn(lp, compute_local_minimum, [InboxHeadEventTimestamp, ToAckHeadEventTimestamp, MarkedMinTimestamp, Lp#lp_status.timestamp, MasterPid, self()]),
 					process_received_messages(Lp#lp_status{samadi_find_mode=true, samadi_marked_messages_min=0, received_messages=RemainingQueue}, MaxMessageToProcess-1);
 				
 				% RECEIVED GLOBAL VIRTUAL TIME (SAMADI ALGORITHM)
@@ -240,7 +236,10 @@ gvt_cleaning(Lp) ->
 													  end end, Lp#lp_status.proc_messages),
 				 history=queue:filter(fun(X) -> {Timestamp,_,_} = X, if Timestamp >= GVT -> true; Timestamp < GVT -> false end end, Lp#lp_status.history)}.
 
-compute_local_minimum(InboxHeadEventTimestamp, ToAckHeadEventTimestamp, MarkedMinTimestamp, LpTimestamp) ->
+%%
+%% Computes the local minimum and sends the result to the GVT controller process
+%%
+compute_local_minimum(InboxHeadEventTimestamp, ToAckHeadEventTimestamp, MarkedMinTimestamp, LpTimestamp, GVTControllerPid, LpPid) ->
 	ComputedLocalMin = lists:foldl(fun(X,Acc) ->
 						if
 							(X > 0) and (Acc > 0) and (X < Acc) -> X;
@@ -251,11 +250,15 @@ compute_local_minimum(InboxHeadEventTimestamp, ToAckHeadEventTimestamp, MarkedMi
 						end end,
 						-1, [InboxHeadEventTimestamp, ToAckHeadEventTimestamp, MarkedMinTimestamp]),
 	if 
-		ComputedLocalMin =< 0 ->  LpTimestamp;
-		ComputedLocalMin > 0 ->   ComputedLocalMin
-	end.
+		ComputedLocalMin =< 0 ->  LocalMin = LpTimestamp;
+		ComputedLocalMin > 0 ->   LocalMin = ComputedLocalMin
+	end,
+	GVTControllerPid ! {my_local_min, LpPid, LocalMin}.
 
 
+%%
+%% Re-enqueues the events to reprocess and send their related antimessages 
+%%
 handle_processed_events([], Lp) -> Lp;
 handle_processed_events([Head|Tail], Lp) ->
 	#sent_msgs{event=Event, msgs_list=EventDependencies} = Head,
@@ -268,12 +271,9 @@ handle_processed_events([Head|Tail], Lp) ->
 			send_antimessages(EventDependencies, Lp)
 	end.
 
-%
-% Performs the rollback in case of a straggler message arrives 
-% @param Lp: the Lp status record
-% @param StragglerTimestamp: the timestamp to rollback to
-% @return the modified Lp status record
-%
+%%
+%% Performs the rollback in case of a straggler message arrives 
+%%
 rollback(StragglerMessage, Lp) ->
 	RollBacks = Lp#lp_status.rollbacks + 1,
 	%io:format("\n~w rollbacks to ~w because ~w, now it's ~w", [self(), StragglerMessage#message.timestamp, StragglerMessage, Lp#lp_status.timestamp]),
@@ -298,13 +298,9 @@ rollback(StragglerMessage, Lp) ->
 	end.
 
 
-%
-% It searches into the queue in input the correspondent message to the antimessage 
-% @param Queue: it could be a list or a queue
-% @param Antimessage: a #message record 
-% @returns in case Queue is a list, [] if it does not find the message, the list without that message otherwise;
-%		   in case Queue is a queue, the output of the delete_element method
-%
+%%
+%% It searches into the queue in input the correspondent message to the antimessage 
+%%%
 annihilate_antimsg(Queue, AntiMessage) ->
 	MessageToFind = #message{type=event, seqNumber=AntiMessage#message.seqNumber,
 					 lpSender=AntiMessage#message.lpSender, lpReceiver=AntiMessage#message.lpReceiver, payload=AntiMessage#message.payload, timestamp=AntiMessage#message.timestamp},
@@ -346,14 +342,9 @@ find_msg_2_test() ->
 					#message{type=ack, seqNumber=1, lpSender=1, lpReceiver=10, payload=3, timestamp=20}).
 
 
-%
-% It searches into the queue in input the correspondent message to the ack 
-% @param MessageQueue: it could be a list or a queue
-% @param Ack: a #message record 
-% @param Type: the #message record type field of the message to ack
-% @returns in case Queue is a list, [] if it does not find the message, the message otherwise;
-%		   in case Queue is a queue, the output of the delete_element method
-%
+%%
+%% It searches into the queue in input the correspondent message to the ack 
+%%
 find_message_to_ack(MessageQueue, Ack, Type) ->
 	#message{type=_, seqNumber=AckSeq, lpSender=LpSender, lpReceiver=LpReceiver, 
 			 payload=AckPayload, timestamp=AckTimestamp} = Ack,
@@ -404,7 +395,6 @@ find_antimessage_to_ack(MessageQueue, Ack) ->
 %%
 %% Checks if the current entity's timestamp is greater or lower
 %% than the one in input.
-%% @return: true if the entity's timestamp is lower, false otherwise
 %%
 check_correct_timestamp(LP_Timestamp, New_Timestamp) ->
 	if 
@@ -432,7 +422,6 @@ send_antimessage(Event, Lp) ->
 
 %% 
 %% Sends a list of antimessages
-%% @param: a list of tuple like following one {Type, PidReceiver, Payload, Timestamp} 
 %%
 send_antimessages([], Lp) -> Lp;
 send_antimessages([HeadEvent | Tail], Lp) -> 
@@ -441,10 +430,6 @@ send_antimessages([HeadEvent | Tail], Lp) ->
 
 %% 
 %% Sends a message to an entity
-%% @param Type: a string correspondent to a message type (event, antimsg, ecc..)
-%% @param PidReceiver: the receiver entity's pid
-%% @param Payload: the content of the message
-%% @param Timestamp: the executing timestamp of the message for the receiver's entity
 %%
 send_message(Message, LPStatus) ->
 	MyLP = self(),
