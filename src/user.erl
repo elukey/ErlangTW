@@ -40,14 +40,14 @@ lp_function(Event, Lp) ->
 	MaxTimestap = ModelState#state.max_timestamp,
 	EntityState = get_entity_state(EntityReceiver, ModelState),
 	% coherence check, testing code
-	if
-		EntityReceiver == 5 ->
-			{ok, WriteDescr} = file:open("/home/luke/Desktop/trace5.txt", [append]), 
-			io:format(WriteDescr,"\nEntity ~w with timestamp ~w received payload ~w", [EntityReceiver, EntityState#entity_state.timestamp, Event#message.payload]), 
-			file:close(WriteDescr);
-		EntityReceiver /= 5 ->
-			ok
-	end,
+	%if
+	%	EntityReceiver == 5 ->
+	%		{ok, WriteDescr} = file:open("/home/luke/Desktop/trace5.txt", [append]), 
+	%		io:format(WriteDescr,"\nEntity ~w with timestamp ~w received payload ~w", [EntityReceiver, EntityState#entity_state.timestamp, Event#message.payload]), 
+	%		file:close(WriteDescr);
+	%	EntityReceiver /= 5 ->
+	%		ok
+	%end,
 	if
 		Event#message.timestamp < EntityState#entity_state.timestamp ->
 			io:format("\n\n~w Entity timestamp ~w message timestamp ~w LP timestamp ~w\n", [self(), EntityState#entity_state.timestamp, Event#message.timestamp, Lp#lp_status.timestamp]),
