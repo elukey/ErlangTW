@@ -50,7 +50,7 @@ dequeue_until_event(Queue, EventToMatch, Acc) ->
 			#sent_msgs{event=Event} = ItemDequeued,
 			if
 				Event /= EventToMatch -> 
-					 dequeue_until_event(NewQueue, EventToMatch, [ItemDequeued] ++ Acc);
+					 dequeue_until_event(NewQueue, EventToMatch, [ItemDequeued | Acc]);
 				Event == EventToMatch -> {Queue, Acc}
 			end
 	end.
@@ -65,10 +65,10 @@ dequeue_until_timestamp(Queue, Timestamp, Acc) ->
 			if
 				Event == nil -> 
 					 {{value, ItemDequeued}, NewQueue} = queue:out_r(Queue),
-					 dequeue_until_timestamp(NewQueue, Timestamp, [ItemDequeued] ++ Acc);
+					 dequeue_until_timestamp(NewQueue, Timestamp, [ItemDequeued |Acc]);
 				Event#message.timestamp >= Timestamp -> 
 					 {{value, ItemDequeued}, NewQueue} = queue:out_r(Queue),
-					 dequeue_until_timestamp(NewQueue, Timestamp, [ItemDequeued] ++ Acc);
+					 dequeue_until_timestamp(NewQueue, Timestamp, [ItemDequeued | Acc]);
 				Event#message.timestamp < Timestamp -> {Queue, Acc}
 			end
 	end.

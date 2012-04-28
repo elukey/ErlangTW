@@ -23,7 +23,7 @@ start(MyLPNumber, InitModelState) ->
 		rollbacks=0,
 		timestamp=0,
 		status=running,
-		max_received_messages=10,
+		max_received_messages=100,
 		samadi_find_mode=false,
 		samadi_marked_messages_min=0,
 		messageSeqNumber=0}, 
@@ -61,10 +61,18 @@ process_top_message(Lp) ->
 		(IsInboxEmpty == false) and ((Lp#lp_status.status == running) or (Lp#lp_status.status == prepare_to_terminate)) -> 
 			{InboxMinEvent, RestOfInbox} = tree_utils:retrieve_min(Lp#lp_status.inbox_messages),
 			History = {InboxMinEvent#message.timestamp, Lp#lp_status.model_state, InboxMinEvent},
-			CurrentEventDep = #sent_msgs{event=InboxMinEvent, msgs_list=[]},
-			NewLp = user:lp_function(InboxMinEvent, Lp#lp_status{timestamp=InboxMinEvent#message.timestamp, 
-																 current_event=InboxMinEvent, proc_messages=queue:in(CurrentEventDep, Lp#lp_status.proc_messages),
-									 							 history = queue:in(History, Lp#lp_status.history)}),
+			%io:format("\n~wProcessing event ~w", [self(), InboxMinEvent]),
+			if
+				% if the event is a starting event 
+				InboxMinEvent#message.lpSender == nil ->
+					NewLp = user:lp_function(InboxMinEvent, Lp#lp_status{timestamp=InboxMinEvent#message.timestamp, 
+																		 current_event=InboxMinEvent, history = queue:in(History, Lp#lp_status.history)});
+				InboxMinEvent#message.lpSender /= nil ->
+					CurrentEventDep = #sent_msgs{event=InboxMinEvent, msgs_list=[]},
+					NewLp = user:lp_function(InboxMinEvent, Lp#lp_status{timestamp=InboxMinEvent#message.timestamp, 
+																		 current_event=InboxMinEvent, proc_messages=queue:in(CurrentEventDep, Lp#lp_status.proc_messages),
+											 							 history = queue:in(History, Lp#lp_status.history)})
+			end,
 			NewLp#lp_status{inbox_messages=RestOfInbox};
 
 		
@@ -215,9 +223,8 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 				% SPECIAL MESSAGE: Start the simulation
 				{start} ->
 					io:format("\nStarting LP ~w with pid ~w",[Lp#lp_status.my_id, self()]),
-					StartingProcEvent = #sent_msgs{event=nil, msgs_list=[]},
-					NewLp = user:start_function(Lp#lp_status{received_messages=RemainingQueue, proc_messages=queue:in(StartingProcEvent, Lp#lp_status.proc_messages)}),
-					process_received_messages(NewLp, MaxMessageToProcess-1);
+					NewLp = generate_starting_events(Lp),
+					process_received_messages(NewLp#lp_status{received_messages=RemainingQueue}, MaxMessageToProcess-1);
 				
 				{prepare_to_terminate, ControllerPid} ->
 					io:format("\n~w has finished, timestamp ~w\n", [self(), Lp#lp_status.timestamp]),
@@ -226,6 +233,11 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 
 			end
 	end.
+
+
+generate_starting_events(Lp) ->
+		StartingProcEvent = #sent_msgs{event=nil, msgs_list=[]},
+		user:start_function(Lp#lp_status{proc_messages=queue:in(StartingProcEvent, Lp#lp_status.proc_messages)}).
 
 
 gvt_cleaning(Lp) ->
@@ -284,16 +296,16 @@ rollback(StragglerMessage, Lp) ->
 	IsNewProcQueueEmpty = queue:is_empty(NewProcQueue),
 	if 
 		IsNewProcQueueEmpty == true -> 
-			io:format("\nProcessed Event queue empty!"),
-			(init_state_vars(NewLp));
+			io:format("\n~w Processed Event queue empty! Straggler message ~w Lp timestamp ~w", [self(), StragglerMessage, NewLp#lp_status.timestamp]),
+			generate_starting_events((init_state_vars(NewLp)));
 		IsNewProcQueueEmpty == false ->
 			if 
 				ToReProcessMsgs /= [] ->
 					[Head|_] = ToReProcessMsgs,
 					restore_history(Head#sent_msgs.event, NewLp);
 				ToReProcessMsgs == [] ->
-					io:format("\nNo event to reprocess during rollback"),
-					NewLp
+					io:format("\n ~w Straggrler event ~w processed events \n~w", [self(),StragglerMessage, NewLp#lp_status.proc_messages]),
+					erlang:error(timewarp_error)
 			end
 	end.
 

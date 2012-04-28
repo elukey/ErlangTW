@@ -13,25 +13,29 @@ start_function(Lp) ->
 	LastEntity = get_last_entity_index(LpId, EntitiesNum, LpsNum), 
 	io:format("\nI am ~w and my first entity is ~w and last is ~w", [self(), FirstEntity, LastEntity]),
 	ModelWithEntitiesStates = StartModel#state{entities_state=generate_init_entities_states(FirstEntity, LastEntity)},
-	NewLp = generate_events(StartModel#state.starting_events, 
-							Lp#lp_status{model_state=ModelWithEntitiesStates}, FirstEntity, LastEntity),
-	NewLp#lp_status{init_model_state=ModelWithEntitiesStates}.
+	{GeneratedEvents, NewModelState} = generate_events(StartModel#state.starting_events, 
+							ModelWithEntitiesStates, FirstEntity, LastEntity, []),
+	% I don't use the generate_events model returned because I'd like to use the init seeds
+	Lp#lp_status{init_model_state=ModelWithEntitiesStates, model_state=NewModelState, 
+					inbox_messages=tree_utils:multi_safe_insert(set_nil_sender(GeneratedEvents), Lp#lp_status.inbox_messages)}.
+
+set_nil_sender(Events) ->
+	lists:map(fun(Event) -> Event#message{lpSender=nil} end, Events).
 
 generate_init_entities_states(FirstEntity, LastEntity) ->
 	InitEntitiesStates = [{Entity, #entity_state{seed=Entity, timestamp=0}} || Entity <- lists:seq(FirstEntity, LastEntity)],
 	dict:from_list(InitEntitiesStates).
 
-generate_events(_, Lp, FirstEntity, LastEntity) when FirstEntity -1 == LastEntity -> Lp;
-generate_events(Number, Lp, FirstEntity, LastEntity) ->
-	generate_events(Number, generate_starting_events(Lp, LastEntity, Number), FirstEntity, LastEntity-1).
+generate_events(_, ModelState, FirstEntity, LastEntity, GeneratedEvents) when FirstEntity -1 == LastEntity -> {GeneratedEvents, ModelState};
+generate_events(Number, ModelState, FirstEntity, LastEntity, GeneratedEvents) ->
+	{ListOfEvents, NewModelState} = generate_starting_events(ModelState, LastEntity, Number, []),
+	generate_events(Number, NewModelState, FirstEntity, LastEntity-1, ListOfEvents ++ GeneratedEvents).
 	
-generate_starting_events(Lp, _, Number) when Number == 0 -> Lp;
-generate_starting_events(Lp, Entity, Number) ->
-	ModelState = get_modelstate(Lp),
-	{Event, NewModelState} = generate_event_from_sender(Entity, 0, 0, ModelState),
+generate_starting_events(ModelState, _, Number, Acc) when Number == 0 -> {Acc, ModelState};
+generate_starting_events(ModelState, Entity, Number, Acc) ->
+	{Event, NewModelState} = generate_event_from_receiver(Entity, 0, 0, ModelState),
 	%io:format("\nEvent generated for entity ~w is ~w", [Entity, Event]),
-	NewLp = lp:send_event(Event#message.lpSender, Event#message.lpReceiver, Event#message.payload, Event#message.timestamp, Lp),
-	generate_starting_events(NewLp#lp_status{model_state=NewModelState}, Entity, Number-1).
+	generate_starting_events(NewModelState, Entity, Number-1, [Event | Acc]).
 
 lp_function(Event, Lp) ->
 	newton_radix(2, 10000),
@@ -40,14 +44,15 @@ lp_function(Event, Lp) ->
 	MaxTimestap = ModelState#state.max_timestamp,
 	EntityState = get_entity_state(EntityReceiver, ModelState),
 	% coherence check, testing code
-	%if
-	%	EntityReceiver == 5 ->
-	%		{ok, WriteDescr} = file:open("/home/luke/Desktop/trace5.txt", [append]), 
-	%		io:format(WriteDescr,"\nEntity ~w with timestamp ~w received payload ~w", [EntityReceiver, EntityState#entity_state.timestamp, Event#message.payload]), 
-	%		file:close(WriteDescr);
-	%	EntityReceiver /= 5 ->
-	%		ok
-	%end,
+	if
+		EntityReceiver == 5 ->
+			{ok, WriteDescr} = file:open("/home/luke/Desktop/trace5.txt", [append]), 
+			io:format(WriteDescr,"\nEntity ~w with timestamp ~w received payload ~w with timestamp ~w", 
+					  [EntityReceiver, EntityState#entity_state.timestamp, Event#message.payload, Event#message.timestamp]), 
+			file:close(WriteDescr);
+		EntityReceiver /= 5 ->
+			ok
+	end,
 	if
 		Event#message.timestamp < EntityState#entity_state.timestamp ->
 			io:format("\n\n~w Entity timestamp ~w message timestamp ~w LP timestamp ~w\n", [self(), EntityState#entity_state.timestamp, Event#message.timestamp, Lp#lp_status.timestamp]),
@@ -88,6 +93,18 @@ generate_event_from_sender(EntitySender, Timestamp, PayloadValue, ModelState) ->
 	Event = #message{type=event, lpSender=self(), lpReceiver=LpReceiver, payload=Payload, seqNumber=0, timestamp=NewTimestamp},
 	NewEntityState = EntityState#entity_state{seed=NewSeed2},
 	NewModelState = ModelState#state{entities_state=set_entity_state(EntitySender, NewEntityState, ModelState)},
+	{Event, NewModelState}.
+
+generate_event_from_receiver(EntityReceiver, Timestamp, PayloadValue, ModelState) ->
+	EntityState = get_entity_state(EntityReceiver, ModelState),
+	{ExpDeltaTime, NewSeed} =  lcg:get_exponential_random(EntityState#entity_state.seed),
+	NewTimestamp = Timestamp + ExpDeltaTime,
+	{EntitySender, NewSeed2} = lcg:get_random(NewSeed, 1, ModelState#state.entities),
+	LpReceiver = which_lp_controls(EntitySender, ModelState#state.entities, ModelState#state.lps),
+	Payload = #payload{entitySender=EntitySender, entityReceiver=EntityReceiver, value=PayloadValue},
+	Event = #message{type=event, lpSender=self(), lpReceiver=LpReceiver, payload=Payload, seqNumber=0, timestamp=NewTimestamp},
+	NewEntityState = EntityState#entity_state{seed=NewSeed2},
+	NewModelState = ModelState#state{entities_state=set_entity_state(EntityReceiver, NewEntityState, ModelState)},
 	{Event, NewModelState}.
 
 %% 
