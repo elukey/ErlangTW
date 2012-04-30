@@ -1,6 +1,8 @@
+ERL_BIN_DIR=/usr/bin
+
 all:
 	make clean	
-	erlc -I include/ -o ebin/ src/*.erl
+	$(ERL_BIN_DIR)/erlc -I include/ -o ebin/ src/*.erl
 clean:
 	rm -rf ebin/*.beam
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
-%%! erl -sname controller -pa ebin/
+%%! erl -pa ebin/
 main([LpsNum, EntitiesNum, MaxTS]) ->
     try
     	LPs = list_to_integer(LpsNum),

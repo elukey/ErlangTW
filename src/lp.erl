@@ -297,6 +297,13 @@ rollback(StragglerMessage, Lp) ->
 	if 
 		IsNewProcQueueEmpty == true -> 
 			io:format("\n~w Processed Event queue empty! Straggler message ~w Lp timestamp ~w", [self(), StragglerMessage, NewLp#lp_status.timestamp]),
+			StartEvent = lists:nth(1, ToReProcessMsgs),
+			if
+				StartEvent#sent_msgs.event == nil -> ok;
+				StartEvent#sent_msgs.event /= nil ->
+					io:format("\nThe first message to reprocess is not nil but ~w!", [StartEvent]),
+					erlang:exit()
+			end,
 			generate_starting_events((init_state_vars(NewLp)));
 		IsNewProcQueueEmpty == false ->
 			if 
@@ -304,8 +311,7 @@ rollback(StragglerMessage, Lp) ->
 					[Head|_] = ToReProcessMsgs,
 					restore_history(Head#sent_msgs.event, NewLp);
 				ToReProcessMsgs == [] ->
-					io:format("\n ~w Straggrler event ~w processed events \n~w", [self(),StragglerMessage, NewLp#lp_status.proc_messages]),
-					erlang:error(timewarp_error)
+					error_logger:error_msg("\n ~p Straggrler event ~p processed events \n~p", [self(),StragglerMessage, NewLp#lp_status.proc_messages])
 			end
 	end.
 
