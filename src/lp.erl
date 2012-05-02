@@ -60,20 +60,11 @@ process_top_message(Lp) ->
 	if 
 		(IsInboxEmpty == false) and ((Lp#lp_status.status == running) or (Lp#lp_status.status == prepare_to_terminate)) -> 
 			{InboxMinEvent, RestOfInbox} = tree_utils:retrieve_min(Lp#lp_status.inbox_messages),
-			History = {InboxMinEvent#message.timestamp, Lp#lp_status.model_state, InboxMinEvent},
-			%io:format("\n~wProcessing event ~w", [self(), InboxMinEvent]),
-			if
-				% if the event is a starting event 
-				InboxMinEvent#message.lpSender == nil ->
-					NewLp = user:lp_function(InboxMinEvent, Lp#lp_status{timestamp=InboxMinEvent#message.timestamp, 
-																		 current_event=InboxMinEvent, history = queue:in(History, Lp#lp_status.history)});
-				InboxMinEvent#message.lpSender /= nil ->
-					CurrentEventDep = #sent_msgs{event=InboxMinEvent, msgs_list=[]},
-					NewLp = user:lp_function(InboxMinEvent, Lp#lp_status{timestamp=InboxMinEvent#message.timestamp, 
-																		 current_event=InboxMinEvent, proc_messages=queue:in(CurrentEventDep, Lp#lp_status.proc_messages),
-											 							 history = queue:in(History, Lp#lp_status.history)})
-			end,
-			NewLp#lp_status{inbox_messages=RestOfInbox};
+			History = {Lp#lp_status.timestamp, Lp#lp_status.model_state, InboxMinEvent},
+			CurrentEventDep = #sent_msgs{event=InboxMinEvent, msgs_list=[]},
+			user:lp_function(InboxMinEvent, Lp#lp_status{timestamp=InboxMinEvent#message.timestamp, inbox_messages=RestOfInbox,
+											 current_event=InboxMinEvent, proc_messages=queue:in(CurrentEventDep, Lp#lp_status.proc_messages),
+				 							 history = queue:in(History, Lp#lp_status.history)});
 
 		
 		(IsInboxEmpty == true) and (Lp#lp_status.status == prepare_to_terminate) -> 
@@ -97,6 +88,19 @@ send_ack_to_received_message(Message, Lp) ->
 					send_ack(Message, Lp)
 			end;
 		TestLocalEvent == true -> Lp
+	end.
+
+
+check_after_rollback(Lp) ->
+	try
+		LastEvent = queue:get_r(Lp#lp_status.proc_messages),
+		if
+			LastEvent#sent_msgs.event#message.timestamp /= Lp#lp_status.timestamp ->
+				io:format("\n\nERROR: \nLast event processed ~w and lp timestamp ~w", [LastEvent#sent_msgs.event, Lp#lp_status.timestamp]);
+			LastEvent#sent_msgs.event#message.timestamp == Lp#lp_status.timestamp -> ok
+		end
+	catch
+		_:_ -> ok
 	end.
 
 %
@@ -127,6 +131,7 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 																						inbox_messages=tree_utils:safe_insert(Message,  LpAfterAck#lp_status.inbox_messages)}, MaxMessageToProcess-1);
 								Result == false -> 
 									LpAfterRollback = rollback(Message, LpAfterAck#lp_status{received_messages=RemainingQueue}),
+									check_after_rollback(LpAfterRollback),
 									process_received_messages(LpAfterRollback#lp_status{inbox_messages=tree_utils:safe_insert(Message, LpAfterRollback#lp_status.inbox_messages)}, MaxMessageToProcess-1)
 							end;
 		
@@ -145,6 +150,7 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 							if 
 								ProcResult == true ->
 									LpAfterRollback = rollback(Message, LpAfterSend),
+									check_after_rollback(LpAfterRollback),
 									process_received_messages(
 									  LpAfterRollback#lp_status{inbox_messages=tree_utils:delete(Message#message{type=event}, LpAfterRollback#lp_status.inbox_messages), 
 																received_messages=RemainingQueue}, MaxMessageToProcess-1);
@@ -236,8 +242,7 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 
 
 generate_starting_events(Lp) ->
-		StartingProcEvent = #sent_msgs{event=nil, msgs_list=[]},
-		user:start_function(Lp#lp_status{proc_messages=queue:in(StartingProcEvent, Lp#lp_status.proc_messages)}).
+		user:start_function(Lp).
 
 
 gvt_cleaning(Lp) ->
@@ -274,14 +279,9 @@ compute_local_minimum(InboxHeadEventTimestamp, ToAckHeadEventTimestamp, MarkedMi
 handle_processed_events([], Lp) -> Lp;
 handle_processed_events([Head|Tail], Lp) ->
 	#sent_msgs{event=Event, msgs_list=EventDependencies} = Head,
-	if 
-		Event /= nil ->
-			NewInbox = tree_utils:safe_insert(Event, Lp#lp_status.inbox_messages),
-			NewLp = send_antimessages(EventDependencies, Lp#lp_status{inbox_messages=NewInbox}),
-			handle_processed_events(Tail, NewLp);
-		Event == nil ->
-			send_antimessages(EventDependencies, Lp)
-	end.
+	NewInbox = tree_utils:safe_insert(Event, Lp#lp_status.inbox_messages),
+	NewLp = send_antimessages(EventDependencies, Lp#lp_status{inbox_messages=NewInbox}),
+	handle_processed_events(Tail, NewLp).
 
 %%
 %% Performs the rollback in case of a straggler message arrives 
@@ -297,21 +297,14 @@ rollback(StragglerMessage, Lp) ->
 	if 
 		IsNewProcQueueEmpty == true -> 
 			io:format("\n~w Processed Event queue empty! Straggler message ~w Lp timestamp ~w", [self(), StragglerMessage, NewLp#lp_status.timestamp]),
-			StartEvent = lists:nth(1, ToReProcessMsgs),
-			if
-				StartEvent#sent_msgs.event == nil -> ok;
-				StartEvent#sent_msgs.event /= nil ->
-					io:format("\nThe first message to reprocess is not nil but ~w!", [StartEvent]),
-					erlang:exit()
-			end,
-			generate_starting_events((init_state_vars(NewLp)));
+			(init_state_vars(NewLp));
 		IsNewProcQueueEmpty == false ->
 			if 
 				ToReProcessMsgs /= [] ->
 					[Head|_] = ToReProcessMsgs,
 					restore_history(Head#sent_msgs.event, NewLp);
 				ToReProcessMsgs == [] ->
-					error_logger:error_msg("\n ~p Straggrler event ~p processed events \n~p", [self(),StragglerMessage, NewLp#lp_status.proc_messages])
+					error_logger:error_msg("\nNO MESSAGE TO REPROCESS DURING ROLLBACK! ~p Straggler event ~p processed events \n~p", [self(),StragglerMessage, Lp#lp_status.proc_messages])
 			end
 	end.
 

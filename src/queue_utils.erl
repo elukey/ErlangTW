@@ -63,9 +63,6 @@ dequeue_until_timestamp(Queue, Timestamp, Acc) ->
 		Guard == false ->
 			#sent_msgs{event=Event} = queue:get_r(Queue),
 			if
-				Event == nil -> 
-					 {{value, ItemDequeued}, NewQueue} = queue:out_r(Queue),
-					 dequeue_until_timestamp(NewQueue, Timestamp, [ItemDequeued |Acc]);
 				Event#message.timestamp >= Timestamp -> 
 					 {{value, ItemDequeued}, NewQueue} = queue:out_r(Queue),
 					 dequeue_until_timestamp(NewQueue, Timestamp, [ItemDequeued | Acc]);
