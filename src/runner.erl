@@ -7,8 +7,8 @@
 main(LPNum, EntitiesNum, MaxTimestamp, Topology) ->
 	StartTimestamp = erlang:now(),
 	Density = 0.5, 
-	InitModelState = #state{value=1, seed=303123, density=Density, lps=LPNum, 
-							starting_events=10, entities=EntitiesNum, entities_state=dict:new(),
+	InitModelState = #state{value=1, seed=303123, density=Density, lps=LPNum,  
+							entities=EntitiesNum, entities_state=dict:new(),
 							max_timestamp=MaxTimestamp},
 	if
 		Topology == sequential ->
@@ -61,7 +61,7 @@ call_vms([Node| RestOfNodes], VMIndex,  LpNum, VMNum, InitModelState)->
 
 create_LPs(LPNumMinIndex, LPNumMaxIndex,  _) when LPNumMaxIndex < LPNumMinIndex -> ok;
 create_LPs(LPNumMinIndex, LPNumMaxIndex, InitModelState) ->
-	Pid = spawn(lp,start,[LPNumMaxIndex,InitModelState#state{seed=LPNumMaxIndex}]),
+	Pid = spawn(lp,start,[LPNumMaxIndex,InitModelState]),
 	Result = global:register_name(list_to_atom(string:concat("lp_",integer_to_list(LPNumMaxIndex))),Pid),
 	if 
 		Result == yes -> ok;
