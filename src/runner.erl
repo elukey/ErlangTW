@@ -7,7 +7,7 @@
 main(LPNum, EntitiesNum, MaxTimestamp, Topology) ->
 	StartTimestamp = erlang:now(),
 	Density = 0.5, 
-	InitModelState = #state{value=1, seed=LPNum, density=Density, lps=LPNum, 
+	InitModelState = #state{value=1, seed=303123, density=Density, lps=LPNum, 
 							starting_events=10, entities=EntitiesNum, entities_state=dict:new(),
 							max_timestamp=MaxTimestamp},
 	if

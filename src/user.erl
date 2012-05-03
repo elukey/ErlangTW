@@ -13,11 +13,33 @@ start_function(Lp) ->
 	LastEntity = get_last_entity_index(LpId, EntitiesNum, LpsNum), 
 	io:format("\nI am ~w and my first entity is ~w and last is ~w", [self(), FirstEntity, LastEntity]),
 	ModelWithEntitiesStates = StartModel#state{entities_state=generate_init_entities_states(FirstEntity, LastEntity)},
-	{GeneratedEvents, NewModelState} = generate_events(StartModel#state.starting_events, 
-							ModelWithEntitiesStates, FirstEntity, LastEntity, []),
+	%{GeneratedEvents, NewModelState} = generate_events(StartModel#state.starting_events, 
+	%						ModelWithEntitiesStates, FirstEntity, LastEntity, []),
+	GeneratedEvents = generate_start_events(StartModel),
 	% I don't use the generate_events model returned because I'd like to use the init seeds
-	Lp#lp_status{init_model_state=ModelWithEntitiesStates, model_state=NewModelState, 
-					inbox_messages=tree_utils:multi_safe_insert(set_nil_sender(GeneratedEvents), Lp#lp_status.inbox_messages)}.
+	Lp#lp_status{init_model_state=ModelWithEntitiesStates, model_state=ModelWithEntitiesStates,
+					inbox_messages=tree_utils:multi_safe_insert(GeneratedEvents, Lp#lp_status.inbox_messages)}.
+
+generate_start_events(Model) ->
+	NumberOfEvents = trunc(Model#state.density * Model#state.entities),
+	generate_start_events_aux(Model, NumberOfEvents, []).
+	
+	
+generate_start_events_aux(_, Number, Acc) when Number == 0 -> Acc;
+generate_start_events_aux(ModelState, Number, Acc) ->
+	{EventTimestamp, NewSeed} =  lcg:get_exponential_random(ModelState#state.seed),
+	{EntityReceiver, NewSeed2} = lcg:get_random(NewSeed, 1, ModelState#state.entities),
+	LpReceiver = which_lp_controls(EntityReceiver, ModelState#state.entities, ModelState#state.lps),
+	if
+		LpReceiver == self() -> 
+			NewInitEvent = #message{type=event, lpSender=nil, lpReceiver=LpReceiver, 
+									timestamp=EventTimestamp, seqNumber=0, 
+									payload=#payload{entitySender=nil, entityReceiver=EntityReceiver, value=0}},
+			generate_start_events_aux(ModelState#state{seed=NewSeed2}, Number-1, [NewInitEvent|Acc]);
+		LpReceiver /= self() -> 
+			generate_start_events_aux(ModelState#state{seed=NewSeed2}, Number-1, Acc)
+	end.
+		
 
 set_nil_sender(Events) ->
 	lists:map(fun(Event) -> Event#message{lpSender=nil} end, Events).
@@ -44,15 +66,15 @@ lp_function(Event, Lp) ->
 	MaxTimestap = ModelState#state.max_timestamp,
 	EntityState = get_entity_state(EntityReceiver, ModelState),
 	% coherence check, testing code
-	if
-		EntityReceiver == 5 ->
-			{ok, WriteDescr} = file:open("/home/luke/Desktop/trace5.txt", [append]), 
-			io:format(WriteDescr,"\nEntity ~w with timestamp ~w received payload ~w with timestamp ~w", 
-					  [EntityReceiver, EntityState#entity_state.timestamp, Event#message.payload, Event#message.timestamp]), 
-			file:close(WriteDescr);
-		EntityReceiver /= 5 ->
-			ok
-	end,
+	%if
+	%	EntityReceiver == 5 ->
+	%		{ok, WriteDescr} = file:open("/home/luke/Desktop/trace5.txt", [append]), 
+	%		io:format(WriteDescr,"\nEntity ~w with timestamp ~w received payload ~w with timestamp ~w", 
+	%				  [EntityReceiver, EntityState#entity_state.timestamp, Event#message.payload, Event#message.timestamp]), 
+	%		file:close(WriteDescr);
+	%	EntityReceiver /= 5 ->
+	%		ok
+	%end,
 	if
 		Event#message.timestamp < EntityState#entity_state.timestamp ->
 			io:format("\n\n~w Entity timestamp ~w message timestamp ~w LP timestamp ~w\n", [self(), EntityState#entity_state.timestamp, Event#message.timestamp, Lp#lp_status.timestamp]),
