@@ -27,7 +27,7 @@ start(MyLPNumber, InitModelState) ->
 		samadi_find_mode=false,
 		samadi_marked_messages_min=0,
 		messageSeqNumber=0}, 
-	io:format("\nI am LP ~w ~w", [Lp#lp_status.my_id, self()]),
+	error_logger:info_msg("~nI am LP ~p ~p", [Lp#lp_status.my_id, self()]),
 	main_loop(init_state_vars(Lp)).
 
 
@@ -48,7 +48,7 @@ main_loop(Lp) ->
 	
 
 print_lp_info(Lp) ->
-	io:format("\n LP ~w rollbacks ~w", [self(), Lp#lp_status.rollbacks]).
+	error_logger:info_msg("~n LP ~p rollbacks ~p", [self(), Lp#lp_status.rollbacks]).
 
 
 %%
@@ -90,19 +90,6 @@ send_ack_to_received_message(Message, Lp) ->
 		TestLocalEvent == true -> Lp
 	end.
 
-
-check_after_rollback(Lp) ->
-	try
-		LastEvent = queue:get_r(Lp#lp_status.proc_messages),
-		if
-			LastEvent#sent_msgs.event#message.timestamp /= Lp#lp_status.timestamp ->
-				io:format("\n\nERROR: \nLast event processed ~w and lp timestamp ~w", [LastEvent#sent_msgs.event, Lp#lp_status.timestamp]);
-			LastEvent#sent_msgs.event#message.timestamp == Lp#lp_status.timestamp -> ok
-		end
-	catch
-		_:_ -> ok
-	end.
-
 %
 % Process the messages received and put them into the received_messages queue 
 % @param Lp: the Lp status record
@@ -131,7 +118,6 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 																						inbox_messages=tree_utils:safe_insert(Message,  LpAfterAck#lp_status.inbox_messages)}, MaxMessageToProcess-1);
 								Result == false -> 
 									LpAfterRollback = rollback(Message, LpAfterAck#lp_status{received_messages=RemainingQueue}),
-									check_after_rollback(LpAfterRollback),
 									process_received_messages(LpAfterRollback#lp_status{inbox_messages=tree_utils:safe_insert(Message, LpAfterRollback#lp_status.inbox_messages)}, MaxMessageToProcess-1)
 							end;
 		
@@ -150,7 +136,6 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 							if 
 								ProcResult == true ->
 									LpAfterRollback = rollback(Message, LpAfterSend),
-									check_after_rollback(LpAfterRollback),
 									process_received_messages(
 									  LpAfterRollback#lp_status{inbox_messages=tree_utils:delete(Message#message{type=event}, LpAfterRollback#lp_status.inbox_messages), 
 																received_messages=RemainingQueue}, MaxMessageToProcess-1);
@@ -228,12 +213,12 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 			
 				% SPECIAL MESSAGE: Start the simulation
 				{start} ->
-					io:format("\nStarting LP ~w with pid ~w",[Lp#lp_status.my_id, self()]),
+					error_logger:info_msg("~nStarting LP ~p with pid ~p",[Lp#lp_status.my_id, self()]),
 					NewLp = generate_starting_events(Lp),
 					process_received_messages(NewLp#lp_status{received_messages=RemainingQueue}, MaxMessageToProcess-1);
 				
 				{prepare_to_terminate, ControllerPid} ->
-					io:format("\n~w has finished, timestamp ~w\n", [self(), Lp#lp_status.timestamp]),
+					error_logger:info_msg("~n~p has finished, timestamp ~p", [self(), Lp#lp_status.timestamp]),
 					ControllerPid ! {ack},
 					process_received_messages(Lp#lp_status{status=prepare_to_terminate, received_messages=queue:new()}, MaxMessageToProcess-1)
 
@@ -296,7 +281,7 @@ rollback(StragglerMessage, Lp) ->
 	IsNewProcQueueEmpty = queue:is_empty(NewProcQueue),
 	if 
 		IsNewProcQueueEmpty == true -> 
-			io:format("\n~w Processed Event queue empty! Straggler message ~w Lp timestamp ~w", [self(), StragglerMessage, NewLp#lp_status.timestamp]),
+			error_logger:info_msg("~n~p Processed Event queue empty! Straggler message ~p Lp timestamp ~p", [self(), StragglerMessage, NewLp#lp_status.timestamp]),
 			(init_state_vars(NewLp));
 		IsNewProcQueueEmpty == false ->
 			if 

@@ -57,14 +57,14 @@ main(ConfigFilePath, Topology) ->
 				LenConnectedErlangVM >= 1 -> ok;
 				LenConnectedErlangVM == 0 -> erlang:exit("Some problems during the connection with the other erlang vms, please check.")
 			end,
-			io:format("\nConnected with the following nodes: ~w\n", [ConnectedErlangVM]),
+			error_logger:info_msg("~nConnected with the following nodes: ~p~n", [ConnectedErlangVM]),
 			call_vms(ConnectedErlangVM, LenConnectedErlangVM, LPNum, LenConnectedErlangVM, InitModelState),
 			global:sync()
 	end,
 	start(LPNum),
 	gvt:gvt_controller(LPNum, MaxTimestamp),
 	EndTimestamp = erlang:now(),
-	io:format("\nTime taken: ~w", [timer:now_diff(EndTimestamp, StartTimestamp)/1000000]).
+	error_logger:info_msg("~nTime taken: ~p~n", [timer:now_diff(EndTimestamp, StartTimestamp)/1000000]).
 
 
 stop_vms([]) -> ok;

@@ -13,8 +13,8 @@ start_function(Lp) ->
 	LpId = Lp#lp_status.my_id,
 	FirstEntity = get_first_entity_index(LpId, EntitiesNum, LpsNum),
 	LastEntity = get_last_entity_index(LpId, EntitiesNum, LpsNum), 
-	io:format("\nI am ~w and my first entity is ~w and last is ~w", [self(), FirstEntity, LastEntity]),
-	ModelWithEntitiesStates = StartModel#state{entities_state=
+	error_logger:info_msg("~nI am ~p and my first entity is ~p and last is ~p", [self(), FirstEntity, LastEntity]),
+	ModelWithEntitiesStates = StartModel#state{entities_state=	
 												   generate_init_entities_states(FirstEntity, LastEntity, StartModel#state.seed)},
 	GeneratedEvents = generate_start_events(StartModel),
 	Lp#lp_status{init_model_state=ModelWithEntitiesStates, model_state=ModelWithEntitiesStates,
@@ -64,7 +64,7 @@ lp_function(Event, Lp) ->
 	%end,
 	if
 		Event#message.timestamp < EntityState#entity_state.timestamp ->
-			io:format("\n\n~w Entity timestamp ~w message timestamp ~w LP timestamp ~w\n", [self(), EntityState#entity_state.timestamp, Event#message.timestamp, Lp#lp_status.timestamp]),
+			error_logger:error_msg("~n~p Entity timestamp ~p message timestamp ~p LP timestamp ~p~n", [self(), EntityState#entity_state.timestamp, Event#message.timestamp, Lp#lp_status.timestamp]),
 			erlang:error("Timestamp less than expected!");
 		Event#message.timestamp >= EntityState#entity_state.timestamp -> 
 			if
@@ -78,12 +78,13 @@ lp_function(Event, Lp) ->
 			end
 	end.
 
-terminate_model(Lp) ->
-	ModelState = get_modelstate(Lp),
-	pretty_print_model_entities(ModelState).
+terminate_model(_) -> 
+	error_logger:info_msg("~n~p has finished~n",[self()]).
+	%ModelState = get_modelstate(Lp),
+	%pretty_print_model_entities(ModelState).
 
-pretty_print_model_entities(ModelState) ->
-	lists:foreach(fun(X) -> {Entity, EntityState} = X, io:format("\nEntity ~w with timestamp ~w\n", [Entity, EntityState#entity_state.timestamp]) end, dict:to_list(ModelState#state.entities_state)).
+%pretty_print_model_entities(ModelState) ->
+%	lists:foreach(fun(X) -> {Entity, EntityState} = X, io:format("\nEntity ~w with timestamp ~w\n", [Entity, EntityState#entity_state.timestamp]) end, dict:to_list(ModelState#state.entities_state)).
 
 
 get_entity_state(Entity, ModelState) ->
