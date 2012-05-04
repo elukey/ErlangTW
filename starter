@@ -1,19 +1,20 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
 %%! erl -pa ebin/
-main([ConfigFilePath]) ->
-    try
-        runner:main(ConfigFilePath,sequential)
-    catch
-    	TypeOfError:ErrorValue ->  io:format("\Exception ~w ~w, stacktrace: ~w \n",[TypeOfError, ErrorValue, erlang:get_stacktrace()])	
-    end;
 
+main([ConfigFilePath, OutputFilePath]) ->
+	main_aux(ConfigFilePath, OutputFilePath);	
 main(_) ->
+	main_aux(".config", "runlog.txt").
+    
+main_aux(ConfigFilePath, OutputFilePath) ->
     try
-    	ConfigFilePath = ".config",
-        runner:main(ConfigFilePath,sequential)
+    	error_logger:logfile({open, OutputFilePath}),
+        runner:main(ConfigFilePath,sequential),
+        error_logger:logfile(close)
     catch
-    	TypeOfError:ErrorValue ->  io:format("\Exception ~w ~w, stacktrace: ~w \n",[TypeOfError, ErrorValue, erlang:get_stacktrace()])	
+    	TypeOfError:ErrorValue ->  io:format("\Exception ~w ~w, stacktrace: ~w \n",
+    		[TypeOfError, ErrorValue, erlang:get_stacktrace()])	
     end.
 
 

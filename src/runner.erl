@@ -5,6 +5,7 @@
 -include("common.hrl").
 
 
+
 get_model_config_scanner() ->
 	fun(ParsedLine, Acc) ->
 			TokenList = string:tokens(ParsedLine, "="),
