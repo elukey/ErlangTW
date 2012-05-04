@@ -1,20 +1,19 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
 %%! erl -pa ebin/
-main([LpsNum, EntitiesNum, MaxTS]) ->
+main([ConfigFilePath]) ->
     try
-    	LPs = list_to_integer(LpsNum),
-	Entities = list_to_integer(EntitiesNum),
-    	MaxTimestamp = list_to_integer(MaxTS),
-        runner:main(LPs,Entities,MaxTimestamp,sequential)
+        runner:main(ConfigFilePath,sequential)
     catch
-    	TypeOfError:ErrorValue -> io:format("\n\nException ~w with value: ~w", [TypeOfError ,ErrorValue])    	
+    	TypeOfError:ErrorValue ->  io:format("\Exception ~w ~w, stacktrace: ~w \n",[TypeOfError, ErrorValue, erlang:get_stacktrace()])	
     end;
 
 main(_) ->
-    usage().
+    try
+    	ConfigFilePath = ".config",
+        runner:main(ConfigFilePath,sequential)
+    catch
+    	TypeOfError:ErrorValue ->  io:format("\Exception ~w ~w, stacktrace: ~w \n",[TypeOfError, ErrorValue, erlang:get_stacktrace()])	
+    end.
 
-usage() ->
-    io:format("usage: starter #lps #entities max_timestamp\n"),
-    halt(1).
 

@@ -1,12 +1,49 @@
 -module(runner).
 
--export([main/4, create_LPs/3, stop_vms/1]).
+-export([main/2, create_LPs/3, stop_vms/1]).
 -include("user_include.hrl").
 -include("common.hrl").
 
-main(LPNum, EntitiesNum, MaxTimestamp, Topology) ->
+
+get_model_config_scanner() ->
+	fun(ParsedLine, Acc) ->
+			TokenList = string:tokens(ParsedLine, "="),
+			LenTokenList = length(TokenList),
+			if
+				 LenTokenList == 2 ->
+					case string:strip(lists:nth(1, TokenList)) of
+						"density" -> [{"density", list_to_float(string:strip(string:strip(lists:nth(2, TokenList)), right, $\n))}|Acc];
+						"lps" -> [{"lps", list_to_integer(string:strip(string:strip(lists:nth(2, TokenList)), right, $\n))}|Acc];
+						"entities" -> [{"entities", list_to_integer(string:strip(string:strip(lists:nth(2, TokenList)), right, $\n))}|Acc];
+						"seed" -> [{"seed", list_to_integer(string:strip(string:strip(lists:nth(2, TokenList)), right, $\n))}|Acc];
+						"max_ts" -> [{"max_ts", list_to_integer(string:strip(string:strip(lists:nth(2, TokenList)), right, $\n))}|Acc]
+					end;
+				LenTokenList /= 2 -> Acc
+		  end
+	end.
+
+read_model_configuration(FileName) ->
+    {ok, Device} = file:open(FileName, [read]),
+    ParametersList = for_each_line(Device, get_model_config_scanner(), []),
+	dict:from_list(ParametersList).
+
+for_each_line(Device, Proc, Acc) ->
+    case file:read_line(Device) of
+		{error, Reason} -> io:format("\nError during reading ~w", [Reason]), Acc;
+        eof  -> file:close(Device), Acc;
+        {ok, Line} -> NewAccum = Proc(Line, Acc),
+                    for_each_line(Device, Proc, NewAccum)
+    end.
+
+main(ConfigFilePath, Topology) ->
 	StartTimestamp = erlang:now(),
-	Density = 0.5, 
+	
+	ParametersDict = read_model_configuration(ConfigFilePath),
+	Density = dict:fetch("density", ParametersDict),
+	LPNum = dict:fetch("lps", ParametersDict),
+	EntitiesNum = dict:fetch("entities", ParametersDict), 
+	MaxTimestamp = dict:fetch("max_ts", ParametersDict),
+	
 	InitModelState = #state{value=1, seed=303123, density=Density, lps=LPNum,  
 							entities=EntitiesNum, entities_state=dict:new(),
 							max_timestamp=MaxTimestamp},

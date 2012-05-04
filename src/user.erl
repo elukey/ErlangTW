@@ -4,6 +4,8 @@
 -include("user_include.hrl").
 -include("common.hrl").
 
+
+
 start_function(Lp) ->
 	StartModel = get_modelstate(Lp),
 	LpsNum = StartModel#state.lps,
@@ -13,12 +15,8 @@ start_function(Lp) ->
 	LastEntity = get_last_entity_index(LpId, EntitiesNum, LpsNum), 
 	io:format("\nI am ~w and my first entity is ~w and last is ~w", [self(), FirstEntity, LastEntity]),
 	ModelWithEntitiesStates = StartModel#state{entities_state=
-												   generate_init_entities_states(FirstEntity, LastEntity)},
-	%{GeneratedEvents, NewModelState} = generate_events(StartModel#state.starting_events, 
-	%						ModelWithEntitiesStates, FirstEntity, LastEntity, []),
+												   generate_init_entities_states(FirstEntity, LastEntity, StartModel#state.seed)},
 	GeneratedEvents = generate_start_events(StartModel),
-	%io:format("\nGenerated events ~w", [GeneratedEvents]),
-	% I don't use the generate_events model returned because I'd like to use the init seeds
 	Lp#lp_status{init_model_state=ModelWithEntitiesStates, model_state=ModelWithEntitiesStates,
 					inbox_messages=tree_utils:multi_safe_insert(GeneratedEvents, Lp#lp_status.inbox_messages)}.
 
@@ -44,8 +42,8 @@ generate_start_events_aux(ModelState, Number, Acc) ->
 		
 
 
-generate_init_entities_states(FirstEntity, LastEntity) ->
-	InitEntitiesStates = [{Entity, #entity_state{seed=Entity, timestamp=0}} || Entity <- lists:seq(FirstEntity, LastEntity)],
+generate_init_entities_states(FirstEntity, LastEntity, BaseSeed) ->
+	InitEntitiesStates = [{Entity, #entity_state{seed=BaseSeed+Entity, timestamp=0}} || Entity <- lists:seq(FirstEntity, LastEntity)],
 	dict:from_list(InitEntitiesStates).
 
 lp_function(Event, Lp) ->
@@ -104,18 +102,6 @@ generate_event_from_sender(EntitySender, Timestamp, PayloadValue, ModelState) ->
 	Event = #message{type=event, lpSender=self(), lpReceiver=LpReceiver, payload=Payload, seqNumber=0, timestamp=NewTimestamp},
 	NewEntityState = EntityState#entity_state{seed=NewSeed2},
 	NewModelState = ModelState#state{entities_state=set_entity_state(EntitySender, NewEntityState, ModelState)},
-	{Event, NewModelState}.
-
-generate_event_from_receiver(EntityReceiver, Timestamp, PayloadValue, ModelState) ->
-	EntityState = get_entity_state(EntityReceiver, ModelState),
-	{ExpDeltaTime, NewSeed} =  lcg:get_exponential_random(EntityState#entity_state.seed),
-	NewTimestamp = Timestamp + ExpDeltaTime,
-	{EntitySender, NewSeed2} = lcg:get_random(NewSeed, 1, ModelState#state.entities),
-	LpReceiver = which_lp_controls(EntitySender, ModelState#state.entities, ModelState#state.lps),
-	Payload = #payload{entitySender=EntitySender, entityReceiver=EntityReceiver, value=PayloadValue},
-	Event = #message{type=event, lpSender=self(), lpReceiver=LpReceiver, payload=Payload, seqNumber=0, timestamp=NewTimestamp},
-	NewEntityState = EntityState#entity_state{seed=NewSeed2},
-	NewModelState = ModelState#state{entities_state=set_entity_state(EntityReceiver, NewEntityState, ModelState)},
 	{Event, NewModelState}.
 
 %% 
