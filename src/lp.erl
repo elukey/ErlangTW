@@ -33,7 +33,7 @@ start(MyLPNumber, InitModelState) ->
 
 main_loop(Lp) ->
 	if 
-		Lp#lp_status.status == running ->
+		(Lp#lp_status.status == running)  ->
 			receive
 				Message ->
 					NewLp = Lp#lp_status{received_messages=queue:in(Message, Lp#lp_status.received_messages)},
@@ -67,7 +67,7 @@ process_top_message(Lp) ->
 				 							 history = queue:in(History, Lp#lp_status.history)});
 
 		
-		(IsInboxEmpty == true) and (Lp#lp_status.status == prepare_to_terminate) -> 
+		(Lp#lp_status.status == prepare_to_terminate) -> 
 			receive 
 				{terminate, _} -> Lp#lp_status{status=terminated}
 			end;
@@ -220,7 +220,7 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 				{prepare_to_terminate, ControllerPid} ->
 					error_logger:info_msg("~n~p has finished, timestamp ~p", [self(), Lp#lp_status.timestamp]),
 					ControllerPid ! {ack},
-					process_received_messages(Lp#lp_status{status=prepare_to_terminate, received_messages=queue:new()}, MaxMessageToProcess-1)
+					process_received_messages(Lp#lp_status{status=prepare_to_terminate, received_messages=RemainingQueue}, MaxMessageToProcess-1)
 
 			end
 	end.
