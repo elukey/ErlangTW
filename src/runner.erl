@@ -44,8 +44,9 @@ main(ConfigFilePath, Topology) ->
 	LPNum = dict:fetch("lps", ParametersDict),
 	EntitiesNum = dict:fetch("entities", ParametersDict), 
 	MaxTimestamp = dict:fetch("max_ts", ParametersDict),
+	Seed = dict:fetch("seed", ParametersDict),
 	
-	InitModelState = #state{value=1, seed=303123, density=Density, lps=LPNum,  
+	InitModelState = #state{value=1, seed=Seed, density=Density, lps=LPNum,  
 							entities=EntitiesNum, entities_state=dict:new(),
 							max_timestamp=MaxTimestamp},
 	if

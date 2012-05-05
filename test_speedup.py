@@ -5,8 +5,8 @@ def create_config_file(filepath, content):
 	filefd.write(content)
 	filefd.close()
 
-def get_config_file_content(density, lps, max_ts, entities):
-	return "lps="+str(lps)+"\ndensity="+str(density)+"\nentities="+str(entities)+"\nmax_ts="+str(max_ts) 
+def get_config_file_content(density, lps, max_ts, entities, seed):
+	return "lps="+str(lps)+"\ndensity="+str(density)+"\nentities="+str(entities)+"\nmax_ts="+str(max_ts)+"\nseed="+str(seed) 
 
 if __name__ == "__main__":
 	print "\nTesting speed up\n"
@@ -22,7 +22,7 @@ if __name__ == "__main__":
 	for lps in lps_list:
 		for run in range(1, exp_runs):
 			print "\nRun " + str(run) + " of " + str(exp_runs) + "\n"  
-			config_file_content = get_config_file_content(density, lps, max_ts, entities)
+			config_file_content = get_config_file_content(density, lps, max_ts, entities, run)
 			config_file_path = tests_dir + "/" + "config_speedup_lp"+str(lps)+"_run"+str(run)
 			create_config_file(config_file_path, config_file_content)
 			output_file_path = tests_dir + "/" + "output_speedup_lp"+str(lps)+"_run"+str(run)
