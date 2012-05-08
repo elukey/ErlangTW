@@ -2,7 +2,7 @@
 -export([gvt_controller/2]).
 
 gvt_controller(LPsnum, MaxTimestamp) ->
-	timer:sleep(10000),
+	timer:sleep(1000),
 	broadcast_gvt_request(LPsnum),
 	{_, _, EntityLocalMin} = calculate_local_min(receive_all(LPsnum)),
 	error_logger:info_msg("~nGlobal min is ~p~n", [EntityLocalMin]),

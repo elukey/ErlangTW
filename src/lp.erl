@@ -32,18 +32,13 @@ start(MyLPNumber, InitModelState) ->
 
 
 main_loop(Lp) ->
-	if 
-		(Lp#lp_status.status == running)  ->
-			receive
-				Message ->
-					NewLp = Lp#lp_status{received_messages=queue:in(Message, Lp#lp_status.received_messages)},
-					main_loop(NewLp)
-		
-			after 0 -> 
-				main_loop(process_top_message(process_received_messages(Lp, Lp#lp_status.max_received_messages)))
-			end;
+	receive
+		Message ->
+			NewLp = Lp#lp_status{received_messages=queue:in(Message, Lp#lp_status.received_messages)},
+			main_loop(NewLp)
 
-		Lp#lp_status.status == terminated -> user:terminate_model(Lp), print_lp_info(Lp), erlang:exit(terminated)
+	after 0 -> 
+		main_loop(process_top_message(process_received_messages(Lp, Lp#lp_status.max_received_messages)))
 	end.
 	
 
@@ -58,7 +53,7 @@ print_lp_info(Lp) ->
 process_top_message(Lp) ->
 	IsInboxEmpty = gb_trees:is_empty(Lp#lp_status.inbox_messages),
 	if 
-		(IsInboxEmpty == false) and ((Lp#lp_status.status == running) or (Lp#lp_status.status == prepare_to_terminate)) -> 
+		(IsInboxEmpty == false)  -> 
 			{InboxMinEvent, RestOfInbox} = tree_utils:retrieve_min(Lp#lp_status.inbox_messages),
 			History = {Lp#lp_status.timestamp, Lp#lp_status.model_state, InboxMinEvent},
 			CurrentEventDep = #sent_msgs{event=InboxMinEvent, msgs_list=[]},
@@ -66,11 +61,6 @@ process_top_message(Lp) ->
 											 current_event=InboxMinEvent, proc_messages=queue:in(CurrentEventDep, Lp#lp_status.proc_messages),
 				 							 history = queue:in(History, Lp#lp_status.history)});
 
-		
-		(Lp#lp_status.status == prepare_to_terminate) -> 
-			receive 
-				{terminate, _} -> Lp#lp_status{status=terminated}
-			end;
 		(IsInboxEmpty == true) -> Lp
 	end.
 
@@ -220,7 +210,9 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 				{prepare_to_terminate, ControllerPid} ->
 					error_logger:info_msg("~n~p has finished, timestamp ~p", [self(), Lp#lp_status.timestamp]),
 					ControllerPid ! {ack},
-					process_received_messages(Lp#lp_status{status=prepare_to_terminate, received_messages=RemainingQueue}, MaxMessageToProcess-1)
+					process_received_messages(Lp#lp_status{status=prepare_to_terminate, received_messages=RemainingQueue}, MaxMessageToProcess-1);
+			
+				{terminate, _} -> user:terminate_model(Lp), print_lp_info(Lp), erlang:exit(terminated)
 
 			end
 	end.

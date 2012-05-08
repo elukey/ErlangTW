@@ -1,4 +1,5 @@
 import subprocess
+import random
 
 def create_config_file(filepath, content):
 	filefd = open(filepath, 'w')
@@ -20,9 +21,11 @@ if __name__ == "__main__":
 	max_ts = 1000
 	
 	for lps in lps_list:
+		random.seed(lps)
 		for run in range(1, exp_runs):
+			seed_run = random.randint(1,10000)
 			print "\nRun " + str(run) + " of " + str(exp_runs) + "\n"  
-			config_file_content = get_config_file_content(density, lps, max_ts, entities, run)
+			config_file_content = get_config_file_content(density, lps, max_ts, entities, seed_run)
 			config_file_path = tests_dir + "/" + "config_speedup_lp"+str(lps)+"_run"+str(run)
 			create_config_file(config_file_path, config_file_content)
 			output_file_path = tests_dir + "/" + "output_speedup_lp"+str(lps)+"_run"+str(run)
