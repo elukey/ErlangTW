@@ -43,7 +43,7 @@ main_loop(Lp) ->
 				main_loop(process_top_message(process_received_messages(Lp, Lp#lp_status.max_received_messages)))
 			end;
 
-		Lp#lp_status.status == terminated -> user:terminate_model(Lp), print_lp_info(Lp)
+		Lp#lp_status.status == terminated -> user:terminate_model(Lp), print_lp_info(Lp), erlang:exit(terminated)
 	end.
 	
 

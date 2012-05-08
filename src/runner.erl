@@ -107,7 +107,7 @@ create_LPs(LPNumMinIndex, LPNumMaxIndex, InitModelState) ->
 		Result == no ->
 			erlang:error("Global register name has failed!")
 	end,
-	link(Pid),
+	%link(Pid),
 	create_LPs(LPNumMinIndex, LPNumMaxIndex-1, InitModelState).
 
 start(0) -> ok;
