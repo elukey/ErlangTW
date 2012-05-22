@@ -10,7 +10,7 @@ main(_) ->
 main_aux(ConfigFilePath, OutputFilePath) ->
     try
     	error_logger:logfile({open, OutputFilePath}),
-        runner:main(ConfigFilePath,sequential),
+        runner:main(ConfigFilePath,parallel),
         error_logger:logfile(close)
     catch
     	TypeOfError:ErrorValue ->  io:format("\Exception ~w ~w, stacktrace: ~w \n",

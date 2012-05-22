@@ -15,7 +15,11 @@ start_function(Lp) ->
 	LastEntity = get_last_entity_index(LpId, EntitiesNum, LpsNum), 
 	error_logger:info_msg("~nI am ~p and my first entity is ~p and last is ~p", [self(), FirstEntity, LastEntity]),
 	GeneratedEvents = generate_start_events(StartModel),
-	NewLpSeed = StartModel#state.seed + Lp#lp_status.my_id,
+	SeedProposal = StartModel#state.seed * LpId + EntitiesNum,
+	if 
+		SeedProposal rem 2 == 0 -> NewLpSeed = StartModel#state.seed + LpId + EntitiesNum + 1;
+		SeedProposal rem 2 /= 0 -> NewLpSeed = StartModel#state.seed + LpId + EntitiesNum
+	end,
 	Lp#lp_status{init_model_state=StartModel, model_state=StartModel#state{seed=NewLpSeed},
 					inbox_messages=tree_utils:multi_safe_insert(GeneratedEvents, Lp#lp_status.inbox_messages)}.
 
@@ -42,7 +46,8 @@ generate_start_events_aux(ModelState, Number, Acc) ->
 
 
 lp_function(Event, Lp) ->
-	newton_radix(2, 10000),
+	Workload = Lp#lp_status.model_state#state.workload,
+	newton_radix(2, Workload),
 	#payload{entityReceiver=EntityReceiver} = Event#message.payload,
 	ModelState = get_modelstate(Lp),
 	MaxTimestap = ModelState#state.max_timestamp,

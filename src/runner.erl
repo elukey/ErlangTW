@@ -17,7 +17,10 @@ get_model_config_scanner() ->
 						"lps" -> [{"lps", list_to_integer(string:strip(string:strip(lists:nth(2, TokenList)), right, $\n))}|Acc];
 						"entities" -> [{"entities", list_to_integer(string:strip(string:strip(lists:nth(2, TokenList)), right, $\n))}|Acc];
 						"seed" -> [{"seed", list_to_integer(string:strip(string:strip(lists:nth(2, TokenList)), right, $\n))}|Acc];
-						"max_ts" -> [{"max_ts", list_to_integer(string:strip(string:strip(lists:nth(2, TokenList)), right, $\n))}|Acc]
+						"max_ts" -> [{"max_ts", list_to_integer(string:strip(string:strip(lists:nth(2, TokenList)), right, $\n))}|Acc];
+						"workload" -> [{"workload", list_to_integer(string:strip(string:strip(lists:nth(2, TokenList)), right, $\n))}|Acc];
+						_ -> io:format("\nError during reading the config file, option not recognized: ~w", [lists:nth(1, TokenList)]),
+						erlang:exit(-1)
 					end;
 				LenTokenList /= 2 -> Acc
 		  end
@@ -45,12 +48,13 @@ main(ConfigFilePath, Topology) ->
 	EntitiesNum = dict:fetch("entities", ParametersDict), 
 	MaxTimestamp = dict:fetch("max_ts", ParametersDict),
 	Seed = dict:fetch("seed", ParametersDict),
+	Workload = dict:fetch("workload", ParametersDict),
 	
 	InitModelState = #state{value=1, seed=Seed, density=Density, lps=LPNum,  
-							entities=EntitiesNum, entities_state=dict:new(),
-							max_timestamp=MaxTimestamp},
+							entities=EntitiesNum, entities_state=none,
+							max_timestamp=MaxTimestamp, workload=Workload},
 	if
-		Topology == sequential ->
+		Topology == parallel ->
 			create_LPs(1, LPNum, InitModelState);
 		Topology == distributed ->
 			ConnectedErlangVM = net_adm:world(),
