@@ -5,7 +5,7 @@ gvt_controller(LPsnum, MaxTimestamp) ->
 	timer:sleep(1000),
 	broadcast_gvt_request(LPsnum),
 	{_, _, EntityLocalMin} = calculate_local_min(receive_all(LPsnum)),
-	error_logger:info_msg("~nGlobal min is ~p~n", [EntityLocalMin]),
+	%error_logger:info_msg("~nGlobal min is ~p~n", [EntityLocalMin]),
 	if
 		EntityLocalMin >= MaxTimestamp -> 
 			error_logger:info_msg("~n~p (controller) has finished, GVT ~p, broadcasting terminate message.. ", [self(), EntityLocalMin]),

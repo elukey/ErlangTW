@@ -43,7 +43,7 @@ main_loop(Lp) ->
 	
 
 print_lp_info(Lp) ->
-	error_logger:info_msg("~n LP ~p rollbacks ~p", [self(), Lp#lp_status.rollbacks]).
+	error_logger:info_msg("~n LP ~p rollbacks ~p timestamp ~p", [self(), Lp#lp_status.rollbacks, Lp#lp_status.timestamp]).
 
 
 %%
@@ -208,7 +208,7 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 					process_received_messages(NewLp#lp_status{received_messages=RemainingQueue}, MaxMessageToProcess-1);
 				
 				{prepare_to_terminate, ControllerPid} ->
-					error_logger:info_msg("~n~p has finished, timestamp ~p", [self(), Lp#lp_status.timestamp]),
+					print_lp_info(Lp),
 					ControllerPid ! {ack},
 					process_received_messages(Lp#lp_status{status=prepare_to_terminate, received_messages=RemainingQueue}, MaxMessageToProcess-1);
 			
