@@ -14,10 +14,9 @@ start_function(Lp) ->
 	FirstEntity = get_first_entity_index(LpId, EntitiesNum, LpsNum),
 	LastEntity = get_last_entity_index(LpId, EntitiesNum, LpsNum), 
 	error_logger:info_msg("~nI am ~p and my first entity is ~p and last is ~p", [self(), FirstEntity, LastEntity]),
-	ModelWithEntitiesStates = StartModel#state{entities_state=	
-												   generate_init_entities_states(FirstEntity, LastEntity, StartModel#state.seed)},
 	GeneratedEvents = generate_start_events(StartModel),
-	Lp#lp_status{init_model_state=ModelWithEntitiesStates, model_state=ModelWithEntitiesStates,
+	NewLpSeed = StartModel#state.seed + Lp#lp_status.my_id,
+	Lp#lp_status{init_model_state=StartModel, model_state=StartModel#state{seed=NewLpSeed},
 					inbox_messages=tree_utils:multi_safe_insert(GeneratedEvents, Lp#lp_status.inbox_messages)}.
 
 generate_start_events(Model) ->
@@ -42,67 +41,30 @@ generate_start_events_aux(ModelState, Number, Acc) ->
 		
 
 
-generate_init_entities_states(FirstEntity, LastEntity, BaseSeed) ->
-	InitEntitiesStates = [{Entity, #entity_state{seed=BaseSeed+Entity, timestamp=0}} || Entity <- lists:seq(FirstEntity, LastEntity)],
-	dict:from_list(InitEntitiesStates).
-
 lp_function(Event, Lp) ->
 	newton_radix(2, 10000),
 	#payload{entityReceiver=EntityReceiver} = Event#message.payload,
 	ModelState = get_modelstate(Lp),
 	MaxTimestap = ModelState#state.max_timestamp,
-	EntityState = get_entity_state(EntityReceiver, ModelState),
-	% coherence check, testing code
-	%if
-	%	EntityReceiver == 5 ->
-	%		{ok, WriteDescr} = file:open("/home/luke/Desktop/trace5.txt", [append]), 
-	%		io:format(WriteDescr,"\nEntity ~w with timestamp ~w received payload ~w with timestamp ~w", 
-	%				  [EntityReceiver, EntityState#entity_state.timestamp, Event#message.payload, Event#message.timestamp]), 
-	%		file:close(WriteDescr);
-	%	EntityReceiver /= 5 ->
-	%		ok
-	%end,
 	if
-		Event#message.timestamp < EntityState#entity_state.timestamp ->
-			error_logger:error_msg("~n~p Entity timestamp ~p message timestamp ~p LP timestamp ~p~n", [self(), EntityState#entity_state.timestamp, Event#message.timestamp, Lp#lp_status.timestamp]),
-			erlang:error("Timestamp less than expected!");
-		Event#message.timestamp >= EntityState#entity_state.timestamp -> 
-			if
-				EntityState#entity_state.timestamp >= MaxTimestap -> Lp;
-				EntityState#entity_state.timestamp < MaxTimestap ->
-					NewEntityState = EntityState#entity_state{timestamp=Event#message.timestamp},
-					NewModelState = ModelState#state{entities_state=set_entity_state(EntityReceiver, NewEntityState, ModelState)},
-					{NewEvent, NewModelState2} = generate_event_from_sender(EntityReceiver, Event#message.timestamp, 1, NewModelState),
-					#message{lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp} = NewEvent, 
-					lp:send_event(LPSender, LPReceiver, Payload, Timestamp, Lp#lp_status{model_state=NewModelState2})
-			end
+		Lp#lp_status.timestamp >= MaxTimestap -> Lp;
+		Lp#lp_status.timestamp < MaxTimestap ->
+			{NewEvent, NewModelState} = generate_event_from_sender(EntityReceiver, Event#message.timestamp, 1, ModelState),
+			#message{lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp} = NewEvent, 
+			lp:send_event(LPSender, LPReceiver, Payload, Timestamp, Lp#lp_status{model_state=NewModelState})
 	end.
 
 terminate_model(_) -> 
 	error_logger:info_msg("~n~p has finished~n",[self()]).
-	%ModelState = get_modelstate(Lp),
-	%pretty_print_model_entities(ModelState).
-
-%pretty_print_model_entities(ModelState) ->
-%	lists:foreach(fun(X) -> {Entity, EntityState} = X, io:format("\nEntity ~w with timestamp ~w\n", [Entity, EntityState#entity_state.timestamp]) end, dict:to_list(ModelState#state.entities_state)).
-
-
-get_entity_state(Entity, ModelState) ->
-	dict:fetch(Entity, ModelState#state.entities_state).
-
-set_entity_state(Entity,State,ModelState) ->
-	dict:store(Entity, State, ModelState#state.entities_state).
 
 generate_event_from_sender(EntitySender, Timestamp, PayloadValue, ModelState) ->
-	EntityState = get_entity_state(EntitySender, ModelState),
-	{ExpDeltaTime, NewSeed} =  lcg:get_exponential_random(EntityState#entity_state.seed),
+	{ExpDeltaTime, NewSeed} =  lcg:get_exponential_random(ModelState#state.seed),
 	NewTimestamp = Timestamp + ExpDeltaTime,
 	{EntityReceiver, NewSeed2} = lcg:get_random(NewSeed, 1, ModelState#state.entities),
 	LpReceiver = which_lp_controls(EntityReceiver, ModelState#state.entities, ModelState#state.lps),
 	Payload = #payload{entitySender=EntitySender, entityReceiver=EntityReceiver, value=PayloadValue},
 	Event = #message{type=event, lpSender=self(), lpReceiver=LpReceiver, payload=Payload, seqNumber=0, timestamp=NewTimestamp},
-	NewEntityState = EntityState#entity_state{seed=NewSeed2},
-	NewModelState = ModelState#state{entities_state=set_entity_state(EntitySender, NewEntityState, ModelState)},
+	NewModelState = ModelState#state{seed=NewSeed2},
 	{Event, NewModelState}.
 
 %% 

@@ -220,8 +220,8 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 
 generate_starting_events(Lp) ->
 		user:start_function(Lp).
-
-
+		
+		
 gvt_cleaning(Lp) ->
 	GVT = Lp#lp_status.gvt,
 	Lp#lp_status{proc_messages=queue:filter(fun(X) -> if X#sent_msgs.event == nil -> false;
