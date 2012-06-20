@@ -12,8 +12,8 @@
 % this program; if not, write to the Free Software Foundation, Inc., 51
 % Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 %
-% Copyright Luca Toscano, PADS team members (Univ. of Bologna) 
-% (http://pads.cs.unibo.it/dokuwiki/doku.php?id=pads:people
+% Copyright Luca Toscano, Gabriele D'Angelo, Moreno Marzolla
+% Computer Science Department, University of Bologna, Italy
 
 -module(lcg).
 -export([get_random_01/1, get_random/3, get_exponential_random/1, get_init_seed/2, get_random_01_combined/1]).
