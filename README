@@ -2,9 +2,23 @@
 Erlang Time Warp
 ================
 
-The Time Warp synchronization algorithm written in Erlang. 
+The Time Warp synchronization algorithm written in Erlang. It implements the PHOLD testing model, it's a prototype and a lot of code is needed to use it into a stable production environment.
 
-CODE STILL IN DEVELOPMENT, Beta testing
+
+Awards
+===============
+
+The Version 1.0 of the Simulator has been presented in the paper[1]:
+
+Parallel and Distributed Simulation with Erlang
+
+accepted at the FHPC'12 conference[2].
+
+
+References:
+
+[1]: http://arxiv.org/abs/1206.2775
+[2]: http://www.hiperfit.dk/fhpc12.html
 
 
 
