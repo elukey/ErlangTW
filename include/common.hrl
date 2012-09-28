@@ -16,7 +16,7 @@
 % Computer Science Department, University of Bologna, Italy
 
 -record(message, {type, seqNumber, lpSender, lpReceiver, payload, timestamp}).
--record(lp_status, {my_id, 
+-record(lp_status, {
 					received_messages, 
 					inbox_messages, 
 					max_received_messages,

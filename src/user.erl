@@ -16,7 +16,7 @@
 % Computer Science Department, University of Bologna, Italy
 
 -module(user).
--export([lp_function/2, start_function/1, newton_radix/2, get_pid/1, terminate_model/1, newton_radix_foldl/2]).
+-export([lp_function/2, start_function/1, newton_radix/2, terminate_model/1, newton_radix_foldl/2]).
 
 -include("user_include.hrl").
 -include("common.hrl").
@@ -27,7 +27,7 @@ start_function(Lp) ->
 	StartModel = get_modelstate(Lp),
 	LpsNum = StartModel#state.lps,
 	EntitiesNum = StartModel#state.entities,
-	LpId = Lp#lp_status.my_id,
+	LpId = StartModel#state.lp_id,
 	FirstEntity = get_first_entity_index(LpId, EntitiesNum, LpsNum),
 	LastEntity = get_last_entity_index(LpId, EntitiesNum, LpsNum), 
 	error_logger:info_msg("~nI am ~p and my first entity is ~p and last is ~p", [self(), FirstEntity, LastEntity]),
@@ -51,12 +51,12 @@ generate_start_events_aux(ModelState, Number, Acc) ->
 	{EntityReceiver, NewSeed2} = lcg:get_random(NewSeed, 1, ModelState#state.entities),
 	LpReceiver = which_lp_controls(EntityReceiver, ModelState#state.entities, ModelState#state.lps),
 	if
-		LpReceiver == self() -> 
+		LpReceiver == ModelState#state.lp_id -> 
 			NewInitEvent = #message{type=event, lpSender=nil, lpReceiver=LpReceiver, 
 									timestamp=EventTimestamp, seqNumber=0, 
 									payload=#payload{entitySender=nil, entityReceiver=EntityReceiver, value=0}},
 			generate_start_events_aux(ModelState#state{seed=NewSeed2}, Number-1, [NewInitEvent|Acc]);
-		LpReceiver /= self() -> 
+		LpReceiver /= ModelState#state.lp_id  -> 
 			generate_start_events_aux(ModelState#state{seed=NewSeed2}, Number-1, Acc)
 	end.
 		
@@ -114,13 +114,13 @@ get_modelstate(Lp) ->
 	Lp#lp_status.model_state.
 
 
-get_pid(LP) ->
-	LPString = "lp_" ++ integer_to_list(LP),
-	Pid = global:whereis_name(list_to_existing_atom(LPString)),
-	if
-		Pid == undefined -> erlang:error("The pid returned for the LP is undefined!\n", [LP,global:registered_names()]);
-		Pid /= undefined -> Pid
-	end.
+%get_pid(LP) ->
+%	LPString = "lp_" ++ integer_to_list(LP),
+%	Pid = global:whereis_name(list_to_atom(LPString)),
+%	if
+%		Pid == undefined -> erlang:error("The pid returned for the LP is undefined!\n", [LP,global:registered_names()]);
+%		Pid /= undefined -> Pid
+%	end.
 
 get_first_entity_index(LpId, EntitiesNum, LpsNum) ->
        trunc((LpId - 1)*(EntitiesNum/LpsNum)+1).
@@ -138,7 +138,8 @@ which_lp_controls(Entity, EntitiesNum, LpsNum) ->
                Entity rem EntitiesEachLP /= 0 -> 
                        LPid = trunc(Entity / EntitiesEachLP) + 1
        end,
-       get_pid(LPid).
+	   "lp_" ++ integer_to_list(LPid).
+       %get_pid(LPid).
 
 
 

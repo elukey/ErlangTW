@@ -121,20 +121,22 @@ call_vms([Node| RestOfNodes], VMIndex,  LpNum, VMNum, InitModelState)->
 
 create_LPs(LPNumMinIndex, LPNumMaxIndex,  _) when LPNumMaxIndex < LPNumMinIndex -> ok;
 create_LPs(LPNumMinIndex, LPNumMaxIndex, InitModelState) ->
-	Pid = spawn(lp,start,[LPNumMaxIndex,InitModelState]),
-	Result = global:register_name(list_to_atom(string:concat("lp_",integer_to_list(LPNumMaxIndex))),Pid),
+	%Pid = spawn(lp,start,[LPNumMaxIndex,InitModelState]),
+	%Result = global:register_name(list_to_atom(string:concat("lp_",integer_to_list(LPNumMaxIndex))),Pid),
+	{Result,_} = lp:start_link(string:concat("lp_",integer_to_list(LPNumMaxIndex)), InitModelState#state{lp_id=LPNumMaxIndex}),
 	if 
-		Result == yes -> ok;
-		Result == no ->
-			erlang:error("Global register name has failed!")
+		Result == ok -> ok;
+		Result == error ->
+			%erlang:error("Global register name has failed!")
+			erlang:error("Lp start link has failed!")
 	end,
 	%link(Pid),
 	create_LPs(LPNumMinIndex, LPNumMaxIndex-1, InitModelState).
 
 start(0) -> ok;
 start(Remaining) when Remaining > 0 ->
-	Pid = user:get_pid(Remaining),
-	Pid ! {start},
+	LPId = string:concat("lp_",integer_to_list(Remaining)),
+	lp:start_simulating(LPId),
 	start(Remaining-1).
 
 get_first_lp_index(VMIndex, TotalLps, TotalVMs) ->

@@ -15,6 +15,6 @@
 % Copyright 2012, Luca Toscano, Gabriele D'Angelo, Moreno Marzolla
 % Computer Science Department, University of Bologna, Italy
 
--record(state, {value, seed, density, lps, entities, entities_state, max_timestamp, workload}).
+-record(state, {value, seed, density, lps, lp_id, entities, entities_state, max_timestamp, workload}).
 -record(payload, {entitySender, entityReceiver, value}).
 -record(entity_state, {seed, timestamp}).

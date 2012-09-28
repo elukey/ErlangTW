@@ -16,16 +16,27 @@
 % Computer Science Department, University of Bologna, Italy
 
 -module(lp).
--export([start/2, send_event/5, compute_local_minimum/6]).
+-behaviour(gen_fsm).
+
+% API
+-export([send_event/5, compute_local_minimum/6, start_simulating/1]).
+
+-export([start_link/2]).
+
+-export([init/1]). % handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
+
+-export([handle_event/3]).
 
 -include("user_include.hrl").
 -include("common.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 
-start(MyLPNumber, InitModelState) ->
+start_link(LPName, InitModelState) ->
+	gen_fsm:start_link({global, LPName}, lp, InitModelState, []).
+
+init(InitModelState) ->
 	Lp = #lp_status{
-		my_id=MyLPNumber,
 		init_model_state = InitModelState,
 		model_state=InitModelState,
 		received_messages=queue:new(),
@@ -44,24 +55,30 @@ start(MyLPNumber, InitModelState) ->
 		samadi_find_mode=false,
 		samadi_marked_messages_min=0,
 		messageSeqNumber=0}, 
-	error_logger:info_msg("~nI am LP ~p ~p", [Lp#lp_status.my_id, self()]),
-	main_loop(init_state_vars(Lp)).
-
-
-main_loop(Lp) ->
-	receive
-		Message ->
-			NewLp = Lp#lp_status{received_messages=queue:in(Message, Lp#lp_status.received_messages)},
-			main_loop(NewLp)
-
-	after 0 -> 
-		main_loop(process_top_message(process_received_messages(Lp, Lp#lp_status.max_received_messages)))
-	end.
+	error_logger:info_msg("~nLp init successful!~n"),
 	
+	% next state of the fsm 
+	{ok, simulate, init_state_vars(Lp)}.
 
-print_lp_info(Lp) ->
-	error_logger:info_msg("~n LP ~p rollbacks ~p timestamp ~p", [self(), Lp#lp_status.rollbacks, Lp#lp_status.timestamp]).
+%
+% Handles all the messages sent by other LPs. 
+%
+handle_event(Message, StateName, Lp) ->
+	NewLp = process_received_messages(Lp#lp_status{received_messages=
+													   queue:in(Message, Lp#lp_status.received_messages)}, Lp#lp_status.max_received_messages),
+	LenInbox = gb_trees:size(NewLp#lp_status.inbox_messages),
+	if
+		LenInbox > 10 -> LpToReturn = process_top_message(NewLp);
+		LenInbox =< 10 -> LpToReturn = NewLp
+	end,
+	{nextstate, simulate, LpToReturn}.
 
+wait_to_start(_, _, Status) ->
+	{nextstate, simulate, Status}.
+
+start_simulating(LPId) ->
+	io:format("\nSending start to ~p with pid ~p",[LPId, global:whereis_name(LPId)]),
+	gen_fsm:send_event({global,LPId}, "start").
 
 %%
 %% Process the fist message in the inbox_messages priority queue,
@@ -220,7 +237,7 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 			
 				% SPECIAL MESSAGE: Start the simulation
 				{start} ->
-					error_logger:info_msg("~nStarting LP ~p with pid ~p",[Lp#lp_status.my_id, self()]),
+					error_logger:info_msg("~nStarting LP with pid ~p",[self()]),
 					NewLp = generate_starting_events(Lp),
 					process_received_messages(NewLp#lp_status{received_messages=RemainingQueue}, MaxMessageToProcess-1);
 				
@@ -447,7 +464,7 @@ send_message(Message, LPStatus) ->
 	end,
 	if
 		LPDest /= MyLP ->
-			LPDest ! Message,
+			gen_fsm:send_all_state_event(Message, LPDest),
 			if 
 				(Message#message.type == event) -> 
 					LPUpdatedDept = insert_dependency(Message, LPStatus),
@@ -507,6 +524,6 @@ init_state_vars(Lp) ->
 	Lp#lp_status{timestamp=0, model_state=Lp#lp_status.init_model_state}.
 
 
-
-	
+print_lp_info(Lp) ->
+	error_logger:info_msg("~n LP ~p rollbacks ~p timestamp ~p", [self(), Lp#lp_status.rollbacks, Lp#lp_status.timestamp]).
 	
