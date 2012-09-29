@@ -19,13 +19,13 @@
 -behaviour(gen_fsm).
 
 % API
--export([send_event/5, compute_local_minimum/6, start_simulating/1]).
+-export([send_event/5, compute_local_minimum/6]).
 
 -export([start_link/2]).
 
--export([init/1]). % handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
+-export([init/1, terminate/3]). % handle_event/3, handle_sync_event/4, handle_info/3, code_change/4]).
 
--export([handle_event/3]).
+-export([simulate/2]).
 
 -include("user_include.hrl").
 -include("common.hrl").
@@ -56,29 +56,25 @@ init(InitModelState) ->
 		samadi_marked_messages_min=0,
 		messageSeqNumber=0}, 
 	error_logger:info_msg("~nLp init successful!~n"),
-	
+	error_logger:info_msg("~nStarting LP with pid ~p",[self()]),
+	NewLp = generate_starting_events(init_state_vars(Lp)),
 	% next state of the fsm 
-	{ok, simulate, init_state_vars(Lp)}.
+	{ok, simulate, NewLp}.
 
 %
 % Handles all the messages sent by other LPs. 
 %
-handle_event(Message, StateName, Lp) ->
+simulate(Message, Lp) ->
+	%io:format("Received message ~p",[Message]),
 	NewLp = process_received_messages(Lp#lp_status{received_messages=
-													   queue:in(Message, Lp#lp_status.received_messages)}, Lp#lp_status.max_received_messages),
-	LenInbox = gb_trees:size(NewLp#lp_status.inbox_messages),
-	if
-		LenInbox > 10 -> LpToReturn = process_top_message(NewLp);
-		LenInbox =< 10 -> LpToReturn = NewLp
-	end,
-	{nextstate, simulate, LpToReturn}.
+												  queue:in(Message, Lp#lp_status.received_messages)}, 
+												  Lp#lp_status.max_received_messages),
 
-wait_to_start(_, _, Status) ->
-	{nextstate, simulate, Status}.
+	{next_state, simulate, process_top_message(NewLp)}.
 
-start_simulating(LPId) ->
-	io:format("\nSending start to ~p with pid ~p",[LPId, global:whereis_name(LPId)]),
-	gen_fsm:send_event({global,LPId}, "start").
+
+terminate(Reason, _, _) ->
+	io:format("\nError: ~p ", [Reason]).
 
 %%
 %% Process the fist message in the inbox_messages priority queue,
@@ -234,12 +230,6 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 					end,
 					NewLp = Lp#lp_status{samadi_find_mode=false, samadi_marked_messages_min=0, gvt=GlobalMinTimestamp, received_messages=RemainingQueue},
 					process_received_messages(gvt_cleaning(NewLp), MaxMessageToProcess-1);
-			
-				% SPECIAL MESSAGE: Start the simulation
-				{start} ->
-					error_logger:info_msg("~nStarting LP with pid ~p",[self()]),
-					NewLp = generate_starting_events(Lp),
-					process_received_messages(NewLp#lp_status{received_messages=RemainingQueue}, MaxMessageToProcess-1);
 				
 				{prepare_to_terminate, ControllerPid} ->
 					print_lp_info(Lp),
@@ -455,16 +445,16 @@ send_antimessages([HeadEvent | Tail], Lp) ->
 %% Sends a message to an entity
 %%
 send_message(Message, LPStatus) ->
-	MyLP = self(),
+%	MyLP = self(),
 	if 
 		(Message#message.type == ack) or (Message#message.type == marked_ack) ->
 			LPDest = Message#message.lpSender;
 		(Message#message.type == antimessage) or (Message#message.type == event) ->
 			LPDest = Message#message.lpReceiver
 	end,
-	if
-		LPDest /= MyLP ->
-			gen_fsm:send_all_state_event(Message, LPDest),
+%	if
+%		LPDest /= MyLP ->
+			gen_fsm:send_event({global, LPDest}, Message),
 			if 
 				(Message#message.type == event) -> 
 					LPUpdatedDept = insert_dependency(Message, LPStatus),
@@ -473,23 +463,30 @@ send_message(Message, LPStatus) ->
 					LPStatus#lp_status{to_ack_messages=list_utils:insert_ordered(LPStatus#lp_status.to_ack_messages, Message)};
 				(Message#message.type == ack) or (Message#message.type == marked_ack) ->
 					LPStatus
-			end;
-		LPDest == MyLP ->
-			if 
-				(Message#message.type == event) ->
-					LPUpdatedDept = insert_dependency(Message, LPStatus),
-					LPUpdatedDept#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)};
-				(Message#message.type == antimessage) ->
-					LPStatus#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)};
-				(Message#message.type == ack) or (Message#message.type == marked_ack) ->
-					LPStatus#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)}
-			end
-	end.
+			end.
+
+%			end;
+%		LPDest == MyLP ->
+%			if 
+%				(Message#message.type == event) ->
+%					LPUpdatedDept = insert_dependency(Message, LPStatus),
+%					LPUpdatedDept#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)};
+%				(Message#message.type == antimessage) ->
+%					LPStatus#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)};
+%				(Message#message.type == ack) or (Message#message.type == marked_ack) ->
+%					LPStatus#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)}
+%			end
+%	end.
 
 insert_dependency(Message, Lp) ->
-	{{value, EventDependencies}, NewProcQueue} = queue:out_r(Lp#lp_status.proc_messages),
-	NewDependencyList = [Message | EventDependencies#sent_msgs.msgs_list],
-	Lp#lp_status{proc_messages=queue:in(EventDependencies#sent_msgs{msgs_list=NewDependencyList}, NewProcQueue)}.
+	EmptyQ = queue:is_empty(Lp#lp_status.proc_messages),
+	if
+		EmptyQ == true -> Lp;
+		EmptyQ == false ->
+				{{value, EventDependencies}, NewProcQueue} = queue:out_r(Lp#lp_status.proc_messages),
+				NewDependencyList = [Message | EventDependencies#sent_msgs.msgs_list],
+				Lp#lp_status{proc_messages=queue:in(EventDependencies#sent_msgs{msgs_list=NewDependencyList}, NewProcQueue)}
+	end.
 
 %% 
 %% User function: send an event to another entity

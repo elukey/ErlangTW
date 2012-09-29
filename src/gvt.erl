@@ -63,12 +63,6 @@ broadcast_terminate(LPsnum) ->
 
 send_all(LPs, _) when LPs == 0 -> ok;
 send_all(LPs, Message) when LPs > 0 -> 
-	get_pid(LPs) ! Message,
+	LPId = string:concat("lp_",integer_to_list(LPs)),
+	gen_fsm:send_event({global, LPId}, Message),
 	send_all(LPs -1, Message).
-
-get_pid(LPnum) ->
-	Pid = global:whereis_name(list_to_existing_atom(string:concat("lp_",integer_to_list(LPnum)))),
-	if
-		Pid == undefined -> error_logger:error_msg("The pid returned for the LP ~w is undefined, aborting..", [LPnum]);
-		Pid /= undefined -> Pid
-	end.

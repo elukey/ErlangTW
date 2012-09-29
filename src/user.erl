@@ -37,32 +37,48 @@ start_function(Lp) ->
 		SeedProposal rem 2 == 0 -> NewLpSeed = StartModel#state.seed + LpId + EntitiesNum + 1;
 		SeedProposal rem 2 /= 0 -> NewLpSeed = StartModel#state.seed + LpId + EntitiesNum
 	end,
-	Lp#lp_status{init_model_state=StartModel, model_state=StartModel#state{seed=NewLpSeed},
-					inbox_messages=tree_utils:multi_safe_insert(GeneratedEvents, Lp#lp_status.inbox_messages)}.
+	StartLp = Lp#lp_status{init_model_state=StartModel, model_state=StartModel#state{seed=NewLpSeed}},
+	send_multiple_events(GeneratedEvents,  StartLp).
+
+
+send_multiple_events([], Lp) -> Lp;
+send_multiple_events([Event|Tail], Lp) ->
+	LPSender = Event#message.lpSender,
+	LPReceiver = Event#message.lpReceiver,
+	Payload = Event#message.payload,
+	Timestamp = Event#message.timestamp,
+	send_multiple_events(Tail, lp:send_event(LPSender, LPReceiver, Payload, Timestamp, Lp)).
 
 generate_start_events(Model) ->
-	NumberOfEvents = trunc(Model#state.density * Model#state.entities),
+	%NumberOfEvents = trunc(Model#state.density * Model#state.entities),
+	NumberOfEvents =10,
 	generate_start_events_aux(Model, NumberOfEvents, []).
 	
 	
 generate_start_events_aux(_, Number, Acc) when Number == 0 -> Acc;
 generate_start_events_aux(ModelState, Number, Acc) ->
 	{EventTimestamp, NewSeed} =  lcg:get_exponential_random(ModelState#state.seed),
-	{EntityReceiver, NewSeed2} = lcg:get_random(NewSeed, 1, ModelState#state.entities),
+	{EntitySender, NewSeed1} = lcg:get_random(NewSeed, 1, ModelState#state.entities),
+	{EntityReceiver, NewSeed2} = lcg:get_random(NewSeed1, 1, ModelState#state.entities),
+	LpSender = which_lp_controls(EntitySender, ModelState#state.entities, ModelState#state.lps),
 	LpReceiver = which_lp_controls(EntityReceiver, ModelState#state.entities, ModelState#state.lps),
+	LPId = get_lpid_from_number(ModelState#state.lp_id),
 	if
-		LpReceiver == ModelState#state.lp_id -> 
-			NewInitEvent = #message{type=event, lpSender=nil, lpReceiver=LpReceiver, 
+		LpSender == LPId -> 
+			NewInitEvent = #message{type=event, lpSender=LpSender, lpReceiver=LpReceiver, 
 									timestamp=EventTimestamp, seqNumber=0, 
-									payload=#payload{entitySender=nil, entityReceiver=EntityReceiver, value=0}},
+									payload=#payload{entitySender=EntitySender, entityReceiver=EntityReceiver, value=0}},
 			generate_start_events_aux(ModelState#state{seed=NewSeed2}, Number-1, [NewInitEvent|Acc]);
-		LpReceiver /= ModelState#state.lp_id  -> 
+		LpSender /= LPId  -> 
 			generate_start_events_aux(ModelState#state{seed=NewSeed2}, Number-1, Acc)
 	end.
 		
 
+get_lpid_from_number(Number) ->
+	string:concat("lp_",integer_to_list(Number)).
 
 lp_function(Event, Lp) ->
+	io:format("I am processing ~p with pid ~p\n", [Event, self()]),
 	Workload = Lp#lp_status.model_state#state.workload,
 	newton_radix(2, Workload),
 	#payload{entityReceiver=EntityReceiver} = Event#message.payload,
@@ -85,7 +101,8 @@ generate_event_from_sender(EntitySender, Timestamp, PayloadValue, ModelState) ->
 	{EntityReceiver, NewSeed2} = lcg:get_random(NewSeed, 1, ModelState#state.entities),
 	LpReceiver = which_lp_controls(EntityReceiver, ModelState#state.entities, ModelState#state.lps),
 	Payload = #payload{entitySender=EntitySender, entityReceiver=EntityReceiver, value=PayloadValue},
-	Event = #message{type=event, lpSender=self(), lpReceiver=LpReceiver, payload=Payload, seqNumber=0, timestamp=NewTimestamp},
+	LPSender = get_lpid_from_number(ModelState#state.lp_id),
+	Event = #message{type=event, lpSender=LPSender, lpReceiver=LpReceiver, payload=Payload, seqNumber=0, timestamp=NewTimestamp},
 	NewModelState = ModelState#state{seed=NewSeed2},
 	{Event, NewModelState}.
 
