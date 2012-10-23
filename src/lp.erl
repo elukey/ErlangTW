@@ -25,7 +25,7 @@
 
 -export([init/1, terminate/3]). % handle_event/3, handle_sync_event/4, handle_info/3, code_change/4]).
 
--export([simulate/2]).
+-export([simulate/2, prepare_to_terminate/2]).
 
 -include("user_include.hrl").
 -include("common.hrl").
@@ -33,10 +33,11 @@
 
 
 start_link(LPName, InitModelState) ->
-	gen_fsm:start_link({global, LPName}, lp, InitModelState, []).
+	gen_fsm:start_link({global, LPName}, lp, [InitModelState,LPName], []).
 
-init(InitModelState) ->
+init([InitModelState,LPName]) ->
 	Lp = #lp_status{
+		lp_id = LPName,
 		init_model_state = InitModelState,
 		model_state=InitModelState,
 		received_messages=queue:new(),
@@ -55,8 +56,8 @@ init(InitModelState) ->
 		samadi_find_mode=false,
 		samadi_marked_messages_min=0,
 		messageSeqNumber=0}, 
-	error_logger:info_msg("~nLp init successful!~n"),
-	error_logger:info_msg("~nStarting LP with pid ~p",[self()]),
+	error_logger:info_msg("~nLp ~s init successful!~n", [LPName]),
+	error_logger:info_msg("~nStarting Lp ~s with pid ~p",[LPName, self()]),
 	NewLp = generate_starting_events(init_state_vars(Lp)),
 	% next state of the fsm 
 	{ok, simulate, NewLp}.
@@ -66,23 +67,35 @@ init(InitModelState) ->
 %
 simulate(Message, Lp) ->
 	%io:format("Received message ~p",[Message]),
-	NewLp = Lp#lp_status{received_messages=queue:in(Message, Lp#lp_status.received_messages)},
 	if 
-		Message#message.type == event -> 
+		Message#message.type == event ->
+			NewLp = Lp#lp_status{received_messages=queue:in(Message, Lp#lp_status.received_messages)},
 			{next_state, simulate, 
 			 	process_top_message(
 			   		process_received_messages(NewLp, Lp#lp_status.max_received_messages))};
-		Message#message.type /= event -> 
+		Message#message.type == prepare_to_terminate ->
+			ControllerPid = Message#message.payload,
+			ControllerPid ! {ack},
+			{next_state, prepare_to_terminate, 
+			 	process_top_message(
+			   		process_received_messages(Lp, Lp#lp_status.max_received_messages))};				
+		(Message#message.type /= event) and  (Message#message.type /= prepare_to_terminate) ->
+			NewLp = Lp#lp_status{received_messages=queue:in(Message, Lp#lp_status.received_messages)},
 			{next_state, simulate, 
 			   	process_received_messages(NewLp, Lp#lp_status.max_received_messages)}
 		
 	end.
 
 	
+prepare_to_terminate(Message, Lp) ->
+	NewLP = process_received_messages(Lp#lp_status{received_messages=queue:in(Message, Lp#lp_status.received_messages)}, Lp#lp_status.max_received_messages),
+	{next_state, prepare_to_terminate, NewLP}.
 
 
-terminate(Reason, _, _) ->
-	io:format("\nError: ~p ", [Reason]).
+
+
+terminate(Reason, _, Lp) ->
+	io:format("\nLP ~s terminated for reason: ~p ", [Lp#lp_status.lp_id, Reason]), ok.
 
 %%
 %% Process the fist message in the inbox_messages priority queue,
@@ -209,8 +222,6 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 							process_received_messages(NewLp#lp_status{received_messages=RemainingQueue}, MaxMessageToProcess-1)
 					end;
 				
-	
-		
 				% COMPUTE LOCAL MINIMUM FOR GVT (SAMADI ALGORITHM)
 				Message when Message#message.type == compute_local_minimum ->
 					MasterPid = Message#message.payload,
@@ -233,22 +244,15 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 				% RECEIVED GLOBAL VIRTUAL TIME (SAMADI ALGORITHM)
 				Message when Message#message.type == gvt ->
 					GlobalMinTimestamp = Message#message.payload,
+					io:format("\nGVT is ~w and timestamp is ~w from lp ~s", [GlobalMinTimestamp, Lp#lp_status.timestamp, Lp#lp_status.lp_id]),
 					if
 						GlobalMinTimestamp < Lp#lp_status.gvt -> 
 							exit("Incorrect GVT");
 						GlobalMinTimestamp >= Lp#lp_status.gvt -> ok
 					end,
 					NewLp = Lp#lp_status{samadi_find_mode=false, samadi_marked_messages_min=0, gvt=GlobalMinTimestamp, received_messages=RemainingQueue},
-					process_received_messages(gvt_cleaning(NewLp), MaxMessageToProcess-1);
-				
-				Message when Message#message.type == prepare_to_terminate ->
-					ControllerPid = Message#message.payload,
-					print_lp_info(Lp),
-					ControllerPid ! {ack},
-					process_received_messages(Lp#lp_status{status=prepare_to_terminate, received_messages=RemainingQueue}, MaxMessageToProcess-1);
-			
-				Message when Message#message.type == terminate -> 
-					user:terminate_model(Lp), print_lp_info(Lp), erlang:exit(terminated)
+					io:format("\nI am ~s to ack ~w", [Lp#lp_status.lp_id, Lp#lp_status.to_ack_messages]),
+					process_received_messages(gvt_cleaning(NewLp), MaxMessageToProcess-1)
 
 			end
 	end.
@@ -283,6 +287,7 @@ compute_local_minimum(InboxHeadEventTimestamp, ToAckHeadEventTimestamp, MarkedMi
 		ComputedLocalMin =< 0 ->  LocalMin = LpTimestamp;
 		ComputedLocalMin > 0 ->   LocalMin = ComputedLocalMin
 	end,
+	io:format("\n~w Local min is ~w", [self(), LocalMin]),
 	GVTControllerPid ! {my_local_min, LpPid, LocalMin}.
 
 
@@ -301,7 +306,7 @@ handle_processed_events([Head|Tail], Lp) ->
 %%
 rollback(StragglerMessage, Lp) ->
 	RollBacks = Lp#lp_status.rollbacks + 1,
-	io:format("\n~w rollbacks to ~w because ~w, now it's ~w", [self(), StragglerMessage#message.timestamp, StragglerMessage, Lp#lp_status.timestamp]),
+	%io:format("\n~w rollbacks to ~w because ~w, now it's ~w", [self(), StragglerMessage#message.timestamp, StragglerMessage, Lp#lp_status.timestamp]),
 	% bring the processed events back in the inbox queue
 	{NewProcQueue, ToReProcessMsgs} = queue_utils:dequeue_until(StragglerMessage, Lp#lp_status.proc_messages),
 	%io:format("\nRE-Processing ~w", [ToReProcessMsgs]),
@@ -342,29 +347,8 @@ annihilate_antimsg(Queue, AntiMessage) ->
 	end.
 
 
-%% unit testing
-annihilate_antimsg_1_test() ->
-	[] = annihilate_antimsg([], #message{type=antimessage, seqNumber=1,
-		lpSender=1, lpReceiver=10, payload=1, timestamp=1}).
-annihilate_antimsg_2_test() ->
-		[#message{type=event, seqNumber=2, lpSender=1, lpReceiver=10, payload=10, timestamp=11}] = 
-		annihilate_antimsg([#message{type=event, seqNumber=1, lpSender=1, lpReceiver=10, payload=1, timestamp=1},
-	 						#message{type=event, seqNumber=2, lpSender=1, lpReceiver=10, payload=10, timestamp=11}], 
-						    #message{type=antimessage, seqNumber=1, lpSender=1, lpReceiver=10, payload=1, timestamp=1}).
-
-
 find_msg(MsgQueue, Message) ->
 	[MessageFound || MessageFound <- MsgQueue, Message == MessageFound].
-
-%% unit testing
-find_msg_1_test() ->
-		[] = find_msg([], #message{type=ack, seqNumber=1, lpSender=1, lpReceiver=10, payload=3, timestamp=20}).
-find_msg_2_test() ->
-		[#message{type=ack, seqNumber=1, lpSender=1, lpReceiver=10, payload=3, timestamp=20}] = 
-			find_msg([#message{type=ack, seqNumber=1, lpSender=1, lpReceiver=10, payload=3, timestamp=20}, 
-					#message{type=ack, seqNumber=11, lpSender=1, lpReceiver=11, payload=3, timestamp=10},
-					#message{type=ack, seqNumber=12, lpSender=11, lpReceiver=13, payload=3, timestamp=30}],
-					#message{type=ack, seqNumber=1, lpSender=1, lpReceiver=10, payload=3, timestamp=20}).
 
 
 %%
@@ -383,16 +367,6 @@ find_message_to_ack(MessageQueue, Ack, Type) ->
 			find_msg(MessageQueue, Message)
 	end.
 
-%% unit testing
-find_message_to_ack_1_test() -> [] = find_message_to_ack([], 
-										#message{type=ack, seqNumber=1, lpSender=11, lpReceiver=22, payload=3, timestamp=20}, 
-										event).
-find_message_to_ack_2_test() ->
-	[#message{type=event, seqNumber=1, lpSender=11, lpReceiver=22, payload=3, timestamp=20}] = 
-		find_message_to_ack([#message{type=event, seqNumber=1, lpSender=11, lpReceiver=22, payload=3, timestamp=20}, 
-					#message{type=event, seqNumber=11, lpSender=1, lpReceiver=21, payload=3, timestamp=10},
-					#message{type=event, seqNumber=12, lpSender=113, lpReceiver=22, payload=3, timestamp=30}], 
-							#message{type=ack, seqNumber=1, lpSender=11, lpReceiver=22, payload=3, timestamp=20}, event).
 
 %%
 %% Finds the correspondent antimessage to the event in input
@@ -457,35 +431,31 @@ send_antimessages([HeadEvent | Tail], Lp) ->
 %% Sends a message to an entity
 %%
 send_message(Message, LPStatus) ->
-%	MyLP = self(),
+	%io:format("\nSending ~w from Lp ~s", [Message, LPStatus#lp_status.lp_id]),
 	if 
 		(Message#message.type == ack) or (Message#message.type == marked_ack) ->
 			LPDest = Message#message.lpSender;
 		(Message#message.type == antimessage) or (Message#message.type == event) ->
 			LPDest = Message#message.lpReceiver
 	end,
-%	if
-%		LPDest /= MyLP ->
-			gen_fsm:send_event({global, LPDest}, Message),
-			if 
-				(Message#message.type == event) -> 
-					LPUpdatedDept = insert_dependency(Message, LPStatus),
-					LPUpdatedDept#lp_status{to_ack_messages=list_utils:insert_ordered(LPStatus#lp_status.to_ack_messages, Message)};
-				(Message#message.type == antimessage) -> 
-					LPStatus#lp_status{to_ack_messages=list_utils:insert_ordered(LPStatus#lp_status.to_ack_messages, Message)};
-				(Message#message.type == ack) or (Message#message.type == marked_ack) ->
-					LPStatus
-			end.
-
+	gen_fsm:send_event({global, LPDest}, Message),
+	if 
+		(Message#message.type == event) -> 
+			LPUpdatedDept = insert_dependency(Message, LPStatus),
+			LPUpdatedDept#lp_status{to_ack_messages=list_utils:insert_ordered(LPStatus#lp_status.to_ack_messages, Message)};
+		(Message#message.type == antimessage) -> 
+			LPStatus#lp_status{to_ack_messages=list_utils:insert_ordered(LPStatus#lp_status.to_ack_messages, Message)};
+		(Message#message.type == ack) or (Message#message.type == marked_ack) ->
+			LPStatus
+	end.
 %			end;
-%		LPDest == MyLP ->
+		
+%		LPDest == LPStatus#lp_status.lp_id ->
 %			if 
 %				(Message#message.type == event) ->
 %					LPUpdatedDept = insert_dependency(Message, LPStatus),
 %					LPUpdatedDept#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)};
-%				(Message#message.type == antimessage) ->
-%					LPStatus#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)};
-%				(Message#message.type == ack) or (Message#message.type == marked_ack) ->
+%				(Message#message.type /= event) ->
 %					LPStatus#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)}
 %			end
 %	end.

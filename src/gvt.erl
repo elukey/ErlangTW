@@ -28,8 +28,8 @@ gvt_controller(LPsnum, MaxTimestamp) ->
 		EntityLocalMin >= MaxTimestamp -> 
 			error_logger:info_msg("~n~p (controller) has finished, GVT ~p, broadcasting terminate message.. ", [self(), EntityLocalMin]),
 			broadcast_prepare_to_terminate(LPsnum),
-			receive_all(LPsnum),
-			broadcast_terminate(LPsnum);
+			receive_all(LPsnum);
+			%broadcast_terminate(LPsnum);
 		
 		EntityLocalMin < MaxTimestamp ->
 			broadcast_gvt_value(LPsnum, EntityLocalMin),
