@@ -66,11 +66,19 @@ init(InitModelState) ->
 %
 simulate(Message, Lp) ->
 	%io:format("Received message ~p",[Message]),
-	NewLp = process_received_messages(Lp#lp_status{received_messages=
-												  queue:in(Message, Lp#lp_status.received_messages)}, 
-												  Lp#lp_status.max_received_messages),
+	NewLp = Lp#lp_status{received_messages=queue:in(Message, Lp#lp_status.received_messages)},
+	if 
+		Message#message.type == event -> 
+			{next_state, simulate, 
+			 	process_top_message(
+			   		process_received_messages(NewLp, Lp#lp_status.max_received_messages))};
+		Message#message.type /= event -> 
+			{next_state, simulate, 
+			   	process_received_messages(NewLp, Lp#lp_status.max_received_messages)}
+		
+	end.
 
-	{next_state, simulate, process_top_message(NewLp)}.
+	
 
 
 terminate(Reason, _, _) ->
@@ -204,7 +212,8 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 	
 		
 				% COMPUTE LOCAL MINIMUM FOR GVT (SAMADI ALGORITHM)
-				{compute_local_minimum, MasterPid} ->
+				Message when Message#message.type == compute_local_minimum ->
+					MasterPid = Message#message.payload,
 					IsInboxEmpty = gb_trees:is_empty(Lp#lp_status.inbox_messages),
 					if
 						IsInboxEmpty == true -> InboxHeadEventTimestamp = -1;
@@ -222,7 +231,8 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 					process_received_messages(Lp#lp_status{samadi_find_mode=true, samadi_marked_messages_min=0, received_messages=RemainingQueue}, MaxMessageToProcess-1);
 				
 				% RECEIVED GLOBAL VIRTUAL TIME (SAMADI ALGORITHM)
-				{gvt, GlobalMinTimestamp} ->
+				Message when Message#message.type == gvt ->
+					GlobalMinTimestamp = Message#message.payload,
 					if
 						GlobalMinTimestamp < Lp#lp_status.gvt -> 
 							exit("Incorrect GVT");
@@ -231,12 +241,14 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 					NewLp = Lp#lp_status{samadi_find_mode=false, samadi_marked_messages_min=0, gvt=GlobalMinTimestamp, received_messages=RemainingQueue},
 					process_received_messages(gvt_cleaning(NewLp), MaxMessageToProcess-1);
 				
-				{prepare_to_terminate, ControllerPid} ->
+				Message when Message#message.type == prepare_to_terminate ->
+					ControllerPid = Message#message.payload,
 					print_lp_info(Lp),
 					ControllerPid ! {ack},
 					process_received_messages(Lp#lp_status{status=prepare_to_terminate, received_messages=RemainingQueue}, MaxMessageToProcess-1);
 			
-				{terminate, _} -> user:terminate_model(Lp), print_lp_info(Lp), erlang:exit(terminated)
+				Message when Message#message.type == terminate -> 
+					user:terminate_model(Lp), print_lp_info(Lp), erlang:exit(terminated)
 
 			end
 	end.
@@ -289,7 +301,7 @@ handle_processed_events([Head|Tail], Lp) ->
 %%
 rollback(StragglerMessage, Lp) ->
 	RollBacks = Lp#lp_status.rollbacks + 1,
-	%io:format("\n~w rollbacks to ~w because ~w, now it's ~w", [self(), StragglerMessage#message.timestamp, StragglerMessage, Lp#lp_status.timestamp]),
+	io:format("\n~w rollbacks to ~w because ~w, now it's ~w", [self(), StragglerMessage#message.timestamp, StragglerMessage, Lp#lp_status.timestamp]),
 	% bring the processed events back in the inbox queue
 	{NewProcQueue, ToReProcessMsgs} = queue_utils:dequeue_until(StragglerMessage, Lp#lp_status.proc_messages),
 	%io:format("\nRE-Processing ~w", [ToReProcessMsgs]),

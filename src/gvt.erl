@@ -17,6 +17,7 @@
 
 -module(gvt).
 -export([gvt_controller/2]).
+-include("common.hrl").
 
 gvt_controller(LPsnum, MaxTimestamp) ->
 	timer:sleep(1000),
@@ -49,17 +50,21 @@ receive_all_aux(LPsnum, ReceivedList) when LPsnum > 0  ->
 	end.
 	
 
-broadcast_gvt_value(LPs, GVTValue) -> 
-	send_all(LPs, {gvt, GVTValue}).
+broadcast_gvt_value(LPs, GVTValue) ->
+	Message = #message{type=gvt, payload=GVTValue},
+	send_all(LPs, Message).
 
 broadcast_gvt_request(LPsnum) ->
-	send_all(LPsnum, {compute_local_minimum, self()}).
+	Message = #message{type=compute_local_minimum, payload=self()},
+	send_all(LPsnum, Message).
 
 broadcast_prepare_to_terminate(LPsnum) ->
-	send_all(LPsnum, {prepare_to_terminate, self()}).
+	Message = #message{type=prepare_to_terminate, payload=self()},
+	send_all(LPsnum, Message).
 
 broadcast_terminate(LPsnum) -> 
-	send_all(LPsnum, {terminate, self()}).
+	Message = #message{type=terminate, payload=self()},
+	send_all(LPsnum, Message).
 
 send_all(LPs, _) when LPs == 0 -> ok;
 send_all(LPs, Message) when LPs > 0 -> 

@@ -78,7 +78,7 @@ get_lpid_from_number(Number) ->
 	string:concat("lp_",integer_to_list(Number)).
 
 lp_function(Event, Lp) ->
-	io:format("I am processing ~p with pid ~p\n", [Event, self()]),
+	%io:format("I am processing ~p with pid ~p\n", [Event, self()]),
 	Workload = Lp#lp_status.model_state#state.workload,
 	newton_radix(2, Workload),
 	#payload{entityReceiver=EntityReceiver} = Event#message.payload,
