@@ -119,16 +119,11 @@ process_top_message(Lp) ->
 
 send_ack_to_received_message(Message, Lp) ->
 	SamadiFindMode = Lp#lp_status.samadi_find_mode,
-	TestLocalEvent = (self() == Message#message.lpSender),
 	if
-		TestLocalEvent == false ->
-			if
-				SamadiFindMode == true ->
-					send_marked_ack(Message, Lp);
-				SamadiFindMode == false ->
-					send_ack(Message, Lp)
-			end;
-		TestLocalEvent == true -> Lp
+		SamadiFindMode == true ->
+			send_marked_ack(Message, Lp);
+		SamadiFindMode == false ->
+			send_ack(Message, Lp)
 	end.
 
 %
@@ -325,26 +320,6 @@ rollback(StragglerMessage, Lp) ->
 					error_logger:error_msg("\nNO MESSAGE TO REPROCESS DURING ROLLBACK! ~p Straggler event ~p processed events \n~p", [self(),StragglerMessage, Lp#lp_status.proc_messages])
 			end
 	end.
-	
-
-
-%%
-%% It searches into the queue in input the correspondent message to the antimessage 
-%%%
-annihilate_antimsg(Queue, AntiMessage) ->
-	MessageToFind = #message{type=event, seqNumber=AntiMessage#message.seqNumber,
-					 lpSender=AntiMessage#message.lpSender, lpReceiver=AntiMessage#message.lpReceiver, payload=AntiMessage#message.payload, timestamp=AntiMessage#message.timestamp},
-	IsQueue = queue:is_queue(Queue),
-	if
-		IsQueue == true ->
-			queue_utils:delete_element(Queue, MessageToFind);
-		IsQueue == false ->
-			CheckInboxMessages = find_msg(Queue, MessageToFind),
-			if
-				CheckInboxMessages == [] -> [];
-				CheckInboxMessages /= [] -> [Message || Message <- Queue, Message /= MessageToFind]
-			end
-	end.
 
 
 find_msg(MsgQueue, Message) ->
@@ -403,20 +378,15 @@ check_correct_timestamp(LP_Timestamp, New_Timestamp) ->
 
 
 send_ack(Message, Lp) ->
-	#message{type=_, seqNumber=SeqNumber, lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp} = Message,
-	Ack = #message{type=ack, seqNumber=SeqNumber, lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp},
+	Ack = Message#message{type=ack},
 	send_message(Ack, Lp).
 
-
 send_marked_ack(Message, Lp) ->
-	#message{type=_, seqNumber=SeqNumber, lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp} = Message,
-	Ack = #message{type=marked_ack, seqNumber=SeqNumber, lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp},
+	Ack = Message#message{type=marked_ack},
 	send_message(Ack, Lp).
 
 send_antimessage(Event, Lp) ->
-	%SeqNumber = Lp#lp_status.messageSeqNumber + 1,
-	#message{type=event, seqNumber=SeqNumber, lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp} = Event,
-	Antimessage = #message{type=antimessage, seqNumber=SeqNumber, lpSender=LPSender, lpReceiver=LPReceiver, payload=Payload, timestamp=Timestamp},
+	Antimessage = Event#message{type=antimessage},
 	send_message(Antimessage, Lp).
 
 %% 
@@ -448,17 +418,7 @@ send_message(Message, LPStatus) ->
 		(Message#message.type == ack) or (Message#message.type == marked_ack) ->
 			LPStatus
 	end.
-%			end;
-		
-%		LPDest == LPStatus#lp_status.lp_id ->
-%			if 
-%				(Message#message.type == event) ->
-%					LPUpdatedDept = insert_dependency(Message, LPStatus),
-%					LPUpdatedDept#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)};
-%				(Message#message.type /= event) ->
-%					LPStatus#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)}
-%			end
-%	end.
+
 
 insert_dependency(Message, Lp) ->
 	EmptyQ = queue:is_empty(Lp#lp_status.proc_messages),
