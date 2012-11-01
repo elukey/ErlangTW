@@ -25,7 +25,7 @@
 
 -export([init/1, terminate/3]). % handle_event/3, handle_sync_event/4, handle_info/3, code_change/4]).
 
--export([simulate/2, prepare_to_terminate/2]).
+-export([simulate/2, start/2, prepare_to_terminate/2]).
 
 -include("user_include.hrl").
 -include("common.hrl").
@@ -58,15 +58,22 @@ init([InitModelState,LPName]) ->
 		messageSeqNumber=0}, 
 	error_logger:info_msg("~nLp ~s init successful!~n", [LPName]),
 	error_logger:info_msg("~nStarting Lp ~s with pid ~p",[LPName, self()]),
-	NewLp = generate_starting_events(init_state_vars(Lp)),
 	% next state of the fsm 
-	{ok, simulate, NewLp}.
+	{ok, start, Lp}.
+
+
+start(_, Lp) ->
+	% starting messages are not subject to rollback because 
+	% they are not associated with any event, so the don't need
+	% explicit dependencies in processed messages
+	NewLp = generate_starting_events(init_state_vars(Lp)),
+	{next_state, simulate, NewLp#lp_status{init_model_state=NewLp#lp_status.model_state}}.
+	
 
 %
 % Handles all the messages sent by other LPs. 
 %
 simulate(Message, Lp) ->
-	%io:format("Received message ~p",[Message]),
 	if 
 		Message#message.type == event ->
 			NewLp = Lp#lp_status{received_messages=queue:in(Message, Lp#lp_status.received_messages)},
@@ -246,7 +253,6 @@ process_received_messages(Lp, MaxMessageToProcess) ->
 						GlobalMinTimestamp >= Lp#lp_status.gvt -> ok
 					end,
 					NewLp = Lp#lp_status{samadi_find_mode=false, samadi_marked_messages_min=0, gvt=GlobalMinTimestamp, received_messages=RemainingQueue},
-					io:format("\nI am ~s to ack ~w", [Lp#lp_status.lp_id, Lp#lp_status.to_ack_messages]),
 					process_received_messages(gvt_cleaning(NewLp), MaxMessageToProcess-1)
 
 			end
@@ -309,7 +315,7 @@ rollback(StragglerMessage, Lp) ->
 	IsNewProcQueueEmpty = queue:is_empty(NewProcQueue),
 	if 
 		IsNewProcQueueEmpty == true -> 
-			error_logger:info_msg("~n~p Processed Event queue empty! Straggler message ~p Lp timestamp ~p", [self(), StragglerMessage, NewLp#lp_status.timestamp]),
+			%error_logger:info_msg("~n~p Processed Event queue empty! Straggler message ~p Lp timestamp ~p LP proc queue ~p", [self(), StragglerMessage, NewLp#lp_status.timestamp, Lp#lp_status.proc_messages]),
 			(init_state_vars(NewLp));
 		IsNewProcQueueEmpty == false ->
 			if 

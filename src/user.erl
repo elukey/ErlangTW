@@ -50,8 +50,7 @@ send_multiple_events([Event|Tail], Lp) ->
 	send_multiple_events(Tail, lp:send_event(LPSender, LPReceiver, Payload, Timestamp, Lp)).
 
 generate_start_events(Model) ->
-	%NumberOfEvents = trunc(Model#state.density * Model#state.entities),
-	NumberOfEvents =10,
+	NumberOfEvents = trunc(Model#state.density * Model#state.entities),
 	generate_start_events_aux(Model, NumberOfEvents, []).
 	
 	

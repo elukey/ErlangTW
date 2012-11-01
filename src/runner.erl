@@ -84,7 +84,7 @@ main(ConfigFilePath, Topology) ->
 			call_vms(ConnectedErlangVM, LenConnectedErlangVM, LPNum, LenConnectedErlangVM, InitModelState),
 			global:sync()
 	end,
-%	start(LPNum),
+	start(LPNum),
 	gvt:gvt_controller(LPNum, MaxTimestamp),
 	EndTimestamp = erlang:now(),
 	error_logger:info_msg("~nTime taken: ~p~n", [timer:now_diff(EndTimestamp, StartTimestamp)/1000000]).
@@ -133,11 +133,11 @@ create_LPs(LPNumMinIndex, LPNumMaxIndex, InitModelState) ->
 	%link(Pid),
 	create_LPs(LPNumMinIndex, LPNumMaxIndex-1, InitModelState).
 
-%start(0) -> ok;
-%start(Remaining) when Remaining > 0 ->
-%	LPId = string:concat("lp_",integer_to_list(Remaining)),
-%	lp:start_simulating(LPId),
-%	start(Remaining-1).
+start(0) -> ok;
+start(Remaining) when Remaining > 0 ->
+	LPId = string:concat("lp_",integer_to_list(Remaining)),
+	gen_fsm:send_event({global, LPId}, start),
+	start(Remaining-1).
 
 get_first_lp_index(VMIndex, TotalLps, TotalVMs) ->
 	trunc((VMIndex - 1)*(TotalLps / TotalVMs)+1).
