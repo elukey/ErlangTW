@@ -18,6 +18,7 @@
 -record(message, {type, seqNumber, lpSender, lpReceiver, payload, timestamp}).
 -record(lp_status, {
 					lp_id,
+					state_timeout,
 					received_messages, 
 					inbox_messages, 
 					max_received_messages,

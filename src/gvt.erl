@@ -62,10 +62,6 @@ broadcast_prepare_to_terminate(LPsnum) ->
 	Message = #message{type=prepare_to_terminate, payload=self()},
 	send_all(LPsnum, Message).
 
-broadcast_terminate(LPsnum) -> 
-	Message = #message{type=terminate, payload=self()},
-	send_all(LPsnum, Message).
-
 send_all(LPs, _) when LPs == 0 -> ok;
 send_all(LPs, Message) when LPs > 0 -> 
 	LPId = string:concat("lp_",integer_to_list(LPs)),

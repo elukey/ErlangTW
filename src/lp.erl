@@ -38,6 +38,7 @@ start_link(LPName, InitModelState) ->
 init([InitModelState,LPName]) ->
 	Lp = #lp_status{
 		lp_id = LPName,
+		state_timeout = 1,
 		init_model_state = InitModelState,
 		model_state=InitModelState,
 		received_messages=queue:new(),
@@ -67,30 +68,39 @@ start(_, Lp) ->
 	% they are not associated with any event, so the don't need
 	% explicit dependencies in processed messages
 	NewLp = generate_starting_events(init_state_vars(Lp)),
-	{next_state, simulate, NewLp#lp_status{init_model_state=NewLp#lp_status.model_state}}.
+	{next_state, simulate, 
+	 	NewLp#lp_status{init_model_state=NewLp#lp_status.model_state},
+	 	NewLp#lp_status.state_timeout}.
 	
 
 %
 % Handles all the messages sent by other LPs. 
 %
 simulate(Message, Lp) ->
-	if 
-		Message#message.type == event ->
-			NewLp = Lp#lp_status{received_messages=queue:in(Message, Lp#lp_status.received_messages)},
-			{next_state, simulate, 
-			 	process_top_message(
-			   		process_received_messages(NewLp, Lp#lp_status.max_received_messages))};
-		Message#message.type == prepare_to_terminate ->
-			ControllerPid = Message#message.payload,
-			ControllerPid ! {ack},
-			{next_state, prepare_to_terminate, 
-			 	process_top_message(
-			   		process_received_messages(Lp, Lp#lp_status.max_received_messages))};				
-		(Message#message.type /= event) and  (Message#message.type /= prepare_to_terminate) ->
-			NewLp = Lp#lp_status{received_messages=queue:in(Message, Lp#lp_status.received_messages)},
-			{next_state, simulate, 
-			   	process_received_messages(NewLp, Lp#lp_status.max_received_messages)}
-		
+	if
+		Message == timeout -> 
+						{next_state, simulate, 
+					   		process_top_message(process_received_messages(Lp, Lp#lp_status.max_received_messages)), 
+						 Lp#lp_status.state_timeout};
+		Message /= timeout ->
+			if 
+				Message#message.type == event ->
+					NewLp = Lp#lp_status{received_messages=queue:in(Message, Lp#lp_status.received_messages)},
+					{next_state, simulate, 
+					 	process_top_message(
+					   		process_received_messages(NewLp, Lp#lp_status.max_received_messages)), Lp#lp_status.state_timeout};
+				Message#message.type == prepare_to_terminate ->
+					ControllerPid = Message#message.payload,
+					ControllerPid ! {ack},
+					{next_state, prepare_to_terminate, 
+					 	process_top_message(
+					   		process_received_messages(Lp, Lp#lp_status.max_received_messages))};				
+				(Message#message.type /= event) and  (Message#message.type /= prepare_to_terminate) ->
+					NewLp = Lp#lp_status{received_messages=queue:in(Message, Lp#lp_status.received_messages)},
+					{next_state, simulate, 
+					   	process_received_messages(NewLp, Lp#lp_status.max_received_messages), Lp#lp_status.state_timeout}
+				
+			end
 	end.
 
 	
@@ -102,6 +112,7 @@ prepare_to_terminate(Message, Lp) ->
 
 
 terminate(Reason, _, Lp) ->
+	print_lp_info(Lp),
 	io:format("\nLP ~s terminated for reason: ~p ", [Lp#lp_status.lp_id, Reason]), ok.
 
 %%
@@ -403,26 +414,40 @@ send_antimessages([HeadEvent | Tail], Lp) ->
 	NewLp = send_antimessage(HeadEvent, Lp),
 	send_antimessages(Tail, NewLp).
 
+
 %% 
 %% Sends a message to an entity
 %%
 send_message(Message, LPStatus) ->
-	%io:format("\nSending ~w from Lp ~s", [Message, LPStatus#lp_status.lp_id]),
+	MyLP = self(),
 	if 
 		(Message#message.type == ack) or (Message#message.type == marked_ack) ->
 			LPDest = Message#message.lpSender;
 		(Message#message.type == antimessage) or (Message#message.type == event) ->
 			LPDest = Message#message.lpReceiver
 	end,
-	gen_fsm:send_event({global, LPDest}, Message),
-	if 
-		(Message#message.type == event) -> 
-			LPUpdatedDept = insert_dependency(Message, LPStatus),
-			LPUpdatedDept#lp_status{to_ack_messages=list_utils:insert_ordered(LPStatus#lp_status.to_ack_messages, Message)};
-		(Message#message.type == antimessage) -> 
-			LPStatus#lp_status{to_ack_messages=list_utils:insert_ordered(LPStatus#lp_status.to_ack_messages, Message)};
-		(Message#message.type == ack) or (Message#message.type == marked_ack) ->
-			LPStatus
+	if
+		LPDest /= MyLP ->
+			gen_fsm:send_event({global, LPDest}, Message),
+			if 
+				(Message#message.type == event) -> 
+					LPUpdatedDept = insert_dependency(Message, LPStatus),
+					LPUpdatedDept#lp_status{to_ack_messages=list_utils:insert_ordered(LPStatus#lp_status.to_ack_messages, Message)};
+				(Message#message.type == antimessage) -> 
+					LPStatus#lp_status{to_ack_messages=list_utils:insert_ordered(LPStatus#lp_status.to_ack_messages, Message)};
+				(Message#message.type == ack) or (Message#message.type == marked_ack) ->
+					LPStatus
+			end;
+		LPDest == MyLP ->
+			if 
+				(Message#message.type == event) ->
+					LPUpdatedDept = insert_dependency(Message, LPStatus),
+					LPUpdatedDept#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)};
+				(Message#message.type == antimessage) ->
+					LPStatus#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)};
+				(Message#message.type == ack) or (Message#message.type == marked_ack) ->
+					LPStatus#lp_status{received_messages=queue:in(Message, LPStatus#lp_status.received_messages)}
+			end
 	end.
 
 
@@ -471,4 +496,6 @@ init_state_vars(Lp) ->
 
 print_lp_info(Lp) ->
 	error_logger:info_msg("~n LP ~p rollbacks ~p timestamp ~p", [self(), Lp#lp_status.rollbacks, Lp#lp_status.timestamp]).
+
+
 	

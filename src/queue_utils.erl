@@ -24,6 +24,9 @@
 -include_lib("eunit/include/eunit.hrl").
 
 
+%%
+%% Remove elements from the history queue
+%%
 dequeue_history_until(Queue, Message) ->
 	Guard = queue:is_empty(Queue),
 	if
@@ -49,7 +52,13 @@ dequeue_history_until_test() ->
 	NewQueue = queue:from_list([{not_imp, not_imp, #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=1}}]),
 	ElementToRestore = {not_imp, not_imp, #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=2}},
 	{ElementToRestore, NewQueue} = dequeue_history_until(Queue, Message).
-	
+
+
+
+%%
+%% Remove elements from the processed events queue 
+%% in case of event or antimessage
+%%
 dequeue_until(Message, Queue) ->
 	if 
 		Message#message.type == event ->
@@ -58,6 +67,10 @@ dequeue_until(Message, Queue) ->
 			dequeue_until_event(Queue, Message#message{type=event}, [])
 	end.
 
+%%
+%% dequeue_until's aux function: it removes element from the tail 
+%% of the input queue until it finds the EventToMatch.
+%%
 dequeue_until_event(Queue, EventToMatch, Acc) ->	
 	Guard = queue:is_empty(Queue),
 	if
@@ -72,7 +85,10 @@ dequeue_until_event(Queue, EventToMatch, Acc) ->
 			end
 	end.
 
-
+%%
+%% dequeue_until's aux function: it removes element from the tail 
+%% of the input queue until it finds an element with Timestamp less
+%% than Timestamp.
 dequeue_until_timestamp(Queue, Timestamp, Acc) ->
 	Guard = queue:is_empty(Queue),
 	if
@@ -88,7 +104,80 @@ dequeue_until_timestamp(Queue, Timestamp, Acc) ->
 	end.
 
 
+%%
+%% Test dequeue_until_timestamp
+%%
+dequeue_util_test() ->
+	Queue = queue:from_list([
+							 #sent_msgs{
+										event=#message{type=event, seqNumber=1, lpSender=1, 
+													   lpReceiver=1, payload=1, timestamp=3},
+										msgs_list=[]},
+							 #sent_msgs{
+										event=#message{type=event, seqNumber=1, lpSender=1, 
+													   lpReceiver=1, payload=1, timestamp=10},
+										msgs_list=[]},
+							 #sent_msgs{
+										event=#message{type=event, seqNumber=1, lpSender=1, 
+													   lpReceiver=1, payload=1, timestamp=12},
+										msgs_list=[]}]),							 			
 
+	Message = #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=7},
+	NewQueue = queue:from_list([#sent_msgs{
+										event=#message{type=event, seqNumber=1, lpSender=1, 
+													   lpReceiver=1, payload=1, timestamp=3},
+										msgs_list=[]}]),
+	ItemDequeued = [#sent_msgs{
+							event=#message{type=event, seqNumber=1, lpSender=1, 
+										   lpReceiver=1, payload=1, timestamp=10},
+							msgs_list=[]},
+				 	#sent_msgs{
+							event=#message{type=event, seqNumber=1, lpSender=1, 
+										   lpReceiver=1, payload=1, timestamp=12},
+							msgs_list=[]}],
+	QueueResult = {NewQueue, ItemDequeued},
+	QueueResult = dequeue_until(Message, Queue).
+
+%%
+%% Test dequeue_until_event
+%%
+dequeue_util_2_test() ->
+	Queue = queue:from_list([
+							 #sent_msgs{
+										event=#message{type=event, seqNumber=1, lpSender=1, 
+													   lpReceiver=1, payload=1, timestamp=3},
+										msgs_list=[]},
+							 #sent_msgs{
+										event=#message{type=event, seqNumber=1, lpSender=1, 
+													   lpReceiver=1, payload=1, timestamp=10},
+										msgs_list=[]},
+							 #sent_msgs{
+										event=#message{type=event, seqNumber=1, lpSender=1, 
+													   lpReceiver=1, payload=1, timestamp=12},
+										msgs_list=[]}]),							 			
+
+	Message = #message{type=event, seqNumber=1, lpSender=1, lpReceiver=1, payload=1, timestamp=10},
+	NewQueue = queue:from_list([#sent_msgs{
+										event=#message{type=event, seqNumber=1, lpSender=1, 
+													   lpReceiver=1, payload=1, timestamp=3},
+										msgs_list=[]}]),
+	ItemDequeued = [#sent_msgs{
+							event=#message{type=event, seqNumber=1, lpSender=1, 
+										   lpReceiver=1, payload=1, timestamp=10},
+							msgs_list=[]},
+				 	#sent_msgs{
+							event=#message{type=event, seqNumber=1, lpSender=1, 
+										   lpReceiver=1, payload=1, timestamp=12},
+							msgs_list=[]}],
+	QueueResult = {NewQueue, ItemDequeued},
+	QueueResult = dequeue_until(Message, Queue).
+
+
+
+%%
+%% Delete an element from a queue, returning
+%% the new queue as result
+%%
 delete_element(Queue, Element) ->
 	CheckPresence = queue:member(Element, Queue),
 	if 
