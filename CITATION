@@ -1,0 +1,26 @@
+To cite ErlangTW please use:
+
+  Luca Toscano, Gabriele D'Angelo, Mmoreno Marzolla, Parallel Discrete
+  Event Simulation with Erlang, proc. ACM SIGPLAN Workshop on
+  Functional High-Performance Computing, FHPC'12, pp 83-—92, 15
+  september 2012, Copenhagen, Denmark, ISBN 978-1-4503-1577-7, DOI
+  10.1145/2364474.2364487
+
+If you use BibTeX for LaTeX, use:
+
+  @inproceedings{Toscano2012,
+    author = {Toscano, Luca and D'Angelo, Gabriele and Marzolla, Moreno},
+    title = {Parallel discrete event simulation with Erlang},
+    booktitle = {Proceedings of the 1st ACM SIGPLAN workshop on Functional high-performance computing},
+    series = {FHPC'12},
+    year = {2012},
+    isbn = {978-1-4503-1577-7},
+    location = {Copenhagen, Denmark},
+    pages = {83--92},
+    numpages = {10},
+    url = {http://doi.acm.org/10.1145/2364474.2364487},
+    doi = {10.1145/2364474.2364487},
+    publisher = {ACM},
+    address = {New York, NY, USA}
+  } 
+
